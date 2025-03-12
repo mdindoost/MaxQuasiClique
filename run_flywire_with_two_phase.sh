@@ -1,6 +1,6 @@
 #!/bin/bash
-# Run the MaxQuasiClique algorithm on the FlyWire connectome data
-# This version has no timeout and properly handles termination
+# Run MaxQuasiClique algorithms on the FlyWire connectome data
+# This script handles ID conversion and uses the modular two-phase algorithm
 
 # Colors for output formatting
 GREEN='\033[0;32m'
@@ -12,7 +12,8 @@ NC='\033[0m' # No Color
 # Default parameters
 INPUT_FILE="data/edges.csv"
 OUTPUT_DIR="results"
-NUM_SEEDS=50
+NUM_SEEDS=5000  # Increase default seeds for better exploration?!
+INITIAL_SOLUTION=""
 
 # Auto-detect number of threads (use 75% of available cores to avoid overloading the system)
 AVAILABLE_THREADS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
@@ -115,7 +116,12 @@ while [[ $# -gt 0 ]]; do
         shift
         shift
         ;;
-        *)
+        --initial-solution)
+        INITIAL_SOLUTION="$2"
+        shift
+        shift
+        ;;
+    *)
         print_error "Unknown option: $1"
         echo "Usage: $0 [--input INPUT_FILE] [--seeds NUM_SEEDS] [--threads NUM_THREADS]"
         exit 1
@@ -128,6 +134,9 @@ echo "- Input file: $INPUT_FILE"
 echo "- Number of seeds: $NUM_SEEDS"
 echo "- Detected CPU cores: $AVAILABLE_THREADS"
 echo "- Using threads: $NUM_THREADS"
+if [ -n "$INITIAL_SOLUTION" ]; then
+    echo "- Initial solution: $INITIAL_SOLUTION"
+fi
 echo "- No timeout (run until completion)"
 echo
 
@@ -143,25 +152,16 @@ echo "First few lines of the input file:"
 head -n 5 "$INPUT_FILE"
 echo
 
-# Step 2: Build the fixed executables if they don't exist
-print_section "BUILDING EXECUTABLES"
-if [ ! -f "build/optimized_solver_fixed" ]; then
-    # Copy the fixed implementation to src directory
-    print_command "cp optimized_solver.cpp src/"
-    cp optimized_solver.cpp src/
-    
-    # Compile the fixed implementation
-    print_command "g++ -std=c++17 -Wall -Wextra -O3 -pthread src/optimized_solver.cpp -o build/optimized_solver"
-    g++ -std=c++17 -Wall -Wextra -O3 -pthread src/optimized_solver.cpp -o build/optimized_solver
-    
-    if [ $? -ne 0 ]; then
-        print_error "Failed to build optimized_solver"
-        exit 1
-    fi
-    print_progress "Successfully built optimized_solver"
-else
-    print_progress "Executable already exists: build/optimized_solver"
+# Step 2: Build the modular implementation
+print_section "BUILDING EXECUTABLE"
+
+print_command "make clean && make"
+make clean && make
+if [ $? -ne 0 ]; then
+    print_error "Failed to build the modular two-phase solver"
+    exit 1
 fi
+print_progress "Successfully built two_phase_solver"
 echo
 
 # Step 3: Prepare the data - Convert to edge list format
@@ -215,18 +215,20 @@ head -n 5 "$CONVERTED_EDGE_FILE"
 echo
 
 # Step 5: Run the algorithm on converted data
-print_section "RUNNING MAXQUASICLIQUE ALGORITHM"
+print_section "RUNNING MODULAR TWO-PHASE ALGORITHM"
 print_progress "This may take a while depending on the size of the graph..."
 print_progress "You can safely press Ctrl+C to stop - the best solution found so far will be saved"
-print_command "./build/optimized_solver \"$CONVERTED_EDGE_FILE\" $NUM_SEEDS $NUM_THREADS"
+if [ -n "$INITIAL_SOLUTION" ]; then
+    print_command "./build/two_phase_solver \"$CONVERTED_EDGE_FILE\" $NUM_SEEDS $NUM_THREADS \"$INITIAL_SOLUTION\""
+    ./build/two_phase_solver "$CONVERTED_EDGE_FILE" $NUM_SEEDS $NUM_THREADS "$INITIAL_SOLUTION" &
+    PID=$!
+else
+    print_command "./build/two_phase_solver \"$CONVERTED_EDGE_FILE\" $NUM_SEEDS $NUM_THREADS"
+    ./build/two_phase_solver "$CONVERTED_EDGE_FILE" $NUM_SEEDS $NUM_THREADS &
+    PID=$!
+fi
 
 echo "Starting algorithm at $(date)"
-./build/optimized_solver "$CONVERTED_EDGE_FILE" $NUM_SEEDS $NUM_THREADS &
-PID=$!
-
-# Monitor progress but don't enforce timeout
-echo "Algorithm running with PID $PID"
-echo "Press Ctrl+C at any time to gracefully terminate and save the best solution found so far"
 
 # Wait for the algorithm to finish
 wait $PID
@@ -280,8 +282,8 @@ echo
 # Step 7: Analyze the results using sequential IDs
 print_section "ANALYZING RESULTS"
 if [ -f "solution.txt" ] && [ -s "solution.txt" ]; then
-    print_command "python3 scripts/run_flywire_analysis.py --executable \"build/optimized_solver_fixed\" --input \"$CONVERTED_EDGE_FILE\" --seeds $NUM_SEEDS --threads $NUM_THREADS --solution \"solution.txt\" --skip-run --output-prefix \"$OUTPUT_DIR/flywire_solution\""
-    python3 scripts/run_flywire_analysis.py --executable "build/optimized_solver_fixed" \
+    print_command "python3 scripts/run_flywire_analysis.py --executable \"build/two_phase_solver\" --input \"$CONVERTED_EDGE_FILE\" --seeds $NUM_SEEDS --threads $NUM_THREADS --solution \"solution.txt\" --skip-run --output-prefix \"$OUTPUT_DIR/flywire_solution\""
+    python3 scripts/run_flywire_analysis.py --executable "build/two_phase_solver" \
         --input "$CONVERTED_EDGE_FILE" \
         --seeds $NUM_SEEDS \
         --threads $NUM_THREADS \

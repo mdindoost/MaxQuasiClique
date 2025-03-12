@@ -1,5 +1,6 @@
 // Optimized implementation of the Density Gradient with Clustering Coefficient Algorithm
 // This version includes multi-threading and memory optimizations for large graphs
+// Fixed version with improved synchronization for solution saving
 
 #include <iostream>
 #include <vector>
@@ -16,6 +17,16 @@
 #include <condition_variable>
 #include <functional>
 #include <cmath>
+#include <csignal>
+
+// Global flag for signal handling
+volatile sig_atomic_t terminationRequested = 0;
+
+// Signal handler for graceful termination
+void signalHandler(int signal) {
+    std::cout << "Received termination signal " << signal << ". Finishing up..." << std::endl;
+    terminationRequested = 1;
+}
 
 using namespace std;
 
@@ -196,7 +207,10 @@ public:
             
             istringstream iss(line);
             int u, v;
-            if (!(iss >> u >> v)) continue; // Skip invalid lines
+            if (!(iss >> u >> v)) {
+                cout << "Debug: Failed to parse line: " << line << endl;
+                continue; // Skip invalid lines
+            }
             
             uniqueVertices.insert(u);
             uniqueVertices.insert(v);
@@ -246,7 +260,9 @@ public:
             
             istringstream iss(line);
             int u, v;
-            if (!(iss >> u >> v)) continue;
+            if (!(iss >> u >> v)) {
+                continue;
+            }
             
             addEdge(u, v);
             edgeCount++;
@@ -301,6 +317,12 @@ public:
         }
         condition.notify_one();
     }
+
+    // Get the number of pending tasks
+    size_t pendingTasks() {
+        unique_lock<mutex> lock(queue_mutex);
+        return tasks.size();
+    }
     
     ~ThreadPool() {
         {
@@ -311,7 +333,9 @@ public:
         condition.notify_all();
         
         for (thread& worker : workers) {
-            worker.join();
+            if (worker.joinable()) {
+                worker.join();
+            }
         }
     }
 };
@@ -323,6 +347,9 @@ private:
     unordered_map<int, double> clusteringCoefficients;
     vector<int> bestSolutionOverall;
     mutex bestSolutionMutex;
+    atomic<bool> solutionFound{false};
+    atomic<int> completedSeeds{0};
+    int totalSeeds;
 
     // Pre-compute clustering coefficients in parallel
     void precomputeClusteringCoefficients(int numThreads) {
@@ -357,6 +384,11 @@ private:
                         auto duration = chrono::duration_cast<chrono::seconds>(currentTime - startTime).count();
                         cout << "  Processed " << newCount << "/" << n << " vertices (" 
                              << (duration > 0 ? newCount / duration : newCount) << " vertices/sec)" << endl;
+                    }
+                    
+                    // Check for termination request
+                    if (terminationRequested) {
+                        break;
                     }
                 }
                 
@@ -454,7 +486,8 @@ private:
     }
 
     // Find a single quasi-clique starting from a seed vertex
-    vector<int> findQuasiCliqueFromSeed(int seed) {
+    vector<int> findQuasiCliqueFromSeed(int seed, int seedIdx) {
+        cout << "Processing seed " << seedIdx + 1 << "/" << totalSeeds << endl;
         cout << "  Starting from seed: " << seed 
              << " (degree: " << graph.getDegree(seed) 
              << ", clustering: " << clusteringCoefficients[seed] << ")" << endl;
@@ -463,7 +496,7 @@ private:
         
         // Expansion phase
         int iteration = 0;
-        while (true) {
+        while (!terminationRequested) {
             iteration++;
             int bestCandidate = -1;
             double bestScore = -1;
@@ -497,6 +530,11 @@ private:
                     bestScore = score;
                     bestCandidate = candidate;
                 }
+                
+                // Check for termination request
+                if (terminationRequested) {
+                    break;
+                }
             }
             
             // If no suitable candidate found, break
@@ -512,9 +550,29 @@ private:
             if (iteration % 10 == 0) {
                 cout << "    Iteration " << iteration << ": solution size = " << solution.size() << endl;
             }
+            
+            // Check if solution is better than current best, and if so, save it immediately
+            // This ensures we have a solution even if the program is terminated
+            if (solution.size() > 5) {  // Only consider solutions of reasonable size
+                lock_guard<mutex> lock(bestSolutionMutex);
+                if (solution.size() > bestSolutionOverall.size() && isQuasiClique(solution)) {
+                    bestSolutionOverall = solution;
+                    solutionFound = true;
+                    
+                    // Write the current best solution to file (overwrites previous)
+                    ofstream solutionFile("solution_in_progress.txt");
+                    for (int v : bestSolutionOverall) {
+                        solutionFile << v << endl;
+                    }
+                    solutionFile.close();
+                    
+                    cout << "  New best solution found: " << bestSolutionOverall.size() << " vertices (saved to solution_in_progress.txt)" << endl;
+                }
+            }
         }
         
         cout << "  Final solution size: " << solution.size() << endl;
+        completedSeeds++;
         
         return solution;
     }
@@ -530,10 +588,21 @@ public:
             if (numThreads == 0) numThreads = 1;
         }
         
+        totalSeeds = numSeeds;
+        
         cout << "Using " << numThreads << " threads" << endl;
+        
+        // Register signal handlers for graceful termination
+        signal(SIGINT, signalHandler);  // Ctrl+C
+        signal(SIGTERM, signalHandler); // kill command
         
         // Pre-compute clustering coefficients
         precomputeClusteringCoefficients(numThreads);
+        
+        if (terminationRequested) {
+            cout << "Termination requested during preprocessing. Exiting." << endl;
+            return bestSolutionOverall;
+        }
         
         // Sort vertices by potential
         vector<int> vertices = graph.getVertices();
@@ -543,12 +612,14 @@ public:
             return calculateVertexPotential(a) > calculateVertexPotential(b);
         });
 
-        cout << "Top 5 vertices by potential:" << endl;
-        for (int i = 0; i < min(5, (int)vertices.size()); i++) {
-            int v = vertices[i];
-            cout << "  " << v << ": degree=" << graph.getDegree(v) 
-                 << ", clustering=" << clusteringCoefficients[v] 
-                 << ", potential=" << calculateVertexPotential(v) << endl;
+        if (vertices.size() > 5) {
+            cout << "Top 5 vertices by potential:" << endl;
+            for (int i = 0; i < min(5, (int)vertices.size()); i++) {
+                int v = vertices[i];
+                cout << "  " << v << ": degree=" << graph.getDegree(v) 
+                     << ", clustering=" << clusteringCoefficients[v] 
+                     << ", potential=" << calculateVertexPotential(v) << endl;
+            }
         }
         
         // Process seeds in parallel
@@ -559,19 +630,32 @@ public:
             int seed = vertices[seedIdx];
             
             pool.enqueue([this, seed, seedIdx, seedsToTry]() {
-                cout << "Processing seed " << seedIdx + 1 << "/" << seedsToTry << endl;
-                vector<int> solution = findQuasiCliqueFromSeed(seed);
+                if (terminationRequested) return;
+                
+                vector<int> solution = findQuasiCliqueFromSeed(seed, seedIdx);
                 
                 // Update best solution if better
                 lock_guard<mutex> lock(bestSolutionMutex);
-                if (solution.size() > bestSolutionOverall.size()) {
+                if (solution.size() > bestSolutionOverall.size() && isQuasiClique(solution)) {
                     bestSolutionOverall = solution;
+                    solutionFound = true;
                     cout << "New best solution found: " << bestSolutionOverall.size() << " vertices" << endl;
                 }
             });
         }
         
         // Wait for all threads to finish
+        // Instead of implicit wait in ThreadPool destructor, monitor and report progress
+        while (completedSeeds < seedsToTry && !terminationRequested) {
+            this_thread::sleep_for(chrono::seconds(5));
+            cout << "Progress: " << completedSeeds << "/" << seedsToTry << " seeds processed, "
+                 << "pending tasks: " << pool.pendingTasks() << endl;
+        }
+        
+        if (terminationRequested) {
+            cout << "Termination requested. Returning best solution found so far." << endl;
+        }
+        
         return bestSolutionOverall;
     }
 
@@ -607,6 +691,32 @@ public:
         } else {
             cout << "No solution found." << endl;
         }
+    }
+
+    // Save solution to file
+    bool saveSolution(const vector<int>& solution, const string& filename = "solution.txt") {
+        try {
+            ofstream solutionFile(filename);
+            if (!solutionFile.is_open()) {
+                cerr << "Error: Could not open file " << filename << " for writing" << endl;
+                return false;
+            }
+            
+            for (int v : solution) {
+                solutionFile << v << endl;
+            }
+            
+            cout << "Solution saved to " << filename << endl;
+            return true;
+        } catch (const exception& e) {
+            cerr << "Error saving solution: " << e.what() << endl;
+            return false;
+        }
+    }
+
+    // Getter for solutionFound flag
+    bool hasSolution() const {
+        return solutionFound;
     }
 };
 
@@ -654,12 +764,39 @@ int main(int argc, char* argv[]) {
     cout << "\nAlgorithm execution time: " << duration / 1000.0 << " seconds" << endl;
     cout << "Total time (including loading): " << (duration + loadDuration) / 1000.0 << " seconds" << endl;
     
-    // Save solution to file
-    ofstream solutionFile("solution.txt");
-    for (int v : solution) {
-        solutionFile << v << endl;
+    // Check if we have a solution (either from normal processing or from checkpoint)
+    if (solution.empty() && !solver.hasSolution()) {
+        // If no solution found, check if there's a solution_in_progress.txt
+        ifstream tempSolutionFile("solution_in_progress.txt");
+        if (tempSolutionFile.good()) {
+            cout << "No final solution, but found in-progress solution. Using that instead." << endl;
+            tempSolutionFile.close();
+            
+            // Load the in-progress solution
+            vector<int> tempSolution;
+            tempSolutionFile.open("solution_in_progress.txt");
+            int vertex;
+            while (tempSolutionFile >> vertex) {
+                tempSolution.push_back(vertex);
+            }
+            tempSolutionFile.close();
+            
+            if (!tempSolution.empty()) {
+                cout << "Loaded " << tempSolution.size() << " vertices from in-progress solution." << endl;
+                solver.verifyAndPrintSolution(tempSolution);
+                solver.saveSolution(tempSolution);
+                return 0;
+            }
+        }
+        
+        cout << "No solution found. Exiting." << endl;
+        // Still save an empty file to indicate the process completed
+        solver.saveSolution(solution);
+        return 0;
     }
-    cout << "Solution saved to solution.txt" << endl;
+    
+    // Save solution to file
+    solver.saveSolution(solution);
     
     return 0;
 }
