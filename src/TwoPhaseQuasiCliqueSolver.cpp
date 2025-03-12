@@ -92,150 +92,216 @@ vector<int> TwoPhaseQuasiCliqueSolver::loadSolutionFromFile(const string& filena
 }
 // Expand from an existing initial solution
 vector<int> TwoPhaseQuasiCliqueSolver::expandFromExistingSolution(
-    const vector<int>& initialSolution, int numSeeds, int numThreads) {
+                                const vector<int>& initialSolution, int numSeeds, int numThreads) {
 
-// Verify the initial solution is valid
-if (!initialSolution.empty()) {
-    if (!isQuasiClique(initialSolution)) {
-        cout << "Warning: Initial solution is not a valid quasi-clique." << endl;
-    }
-    if (!isConnected(initialSolution)) {
-        cout << "Warning: Initial solution is not connected." << endl;
-    }
-} else {
-    cout << "Warning: Initial solution is empty. Proceeding with regular algorithm." << endl;
-    return findLargeQuasiClique(numSeeds, numThreads);
-}
-
-// Start with the initial solution as our best
-bestSolutionOverall = initialSolution;
-
-// Determine number of threads to use
-if (numThreads <= 0) {
-    numThreads = thread::hardware_concurrency();
-    if (numThreads == 0) numThreads = 1;
-}
-
-// Pre-compute clustering coefficients
-precomputeClusteringCoefficients(numThreads);
-
-if (terminationRequested) {
-    cout << "Termination requested during preprocessing. Exiting." << endl;
-    return bestSolutionOverall;
-}
-
-// Detect communities
-cout << "Step 1: Detecting communities in the graph..." << endl;
-communityDetector.detectCommunities();
-
-if (terminationRequested) {
-    cout << "Termination requested during community detection. Exiting." << endl;
-    return bestSolutionOverall;
-}
-
-// Phase 1: Use the initial solution and expand
-cout << "Phase 1: Expanding from initial solution of " << initialSolution.size() << " nodes" << endl;
-
-// First approach: Use the initial solution as a single seed
-candidateSolutions.push_back(initialSolution);
-
-// Second approach: Use boundary vertices of the initial solution as seeds
-unordered_set<int> boundaryCandidates = findBoundaryVertices(initialSolution);
-vector<int> boundarySeeds(boundaryCandidates.begin(), boundaryCandidates.end());
-
-// Sort boundary seeds by degree
-sort(boundarySeeds.begin(), boundarySeeds.end(), [this](int a, int b) {
-    return graph.getDegree(a) > graph.getDegree(b);
-});
-
-// Limit the number of boundary seeds to use
-int boundaryCount = min((int)boundarySeeds.size(), numSeeds);
-boundarySeeds.resize(boundaryCount);
-
-// Also add high-degree nodes not in boundary as potential seeds
-vector<int> degreeSeeds = selectSeedsBasedOnDegree(numSeeds);
-for (int seed : degreeSeeds) {
-    // Check if seed is already in boundary seeds
-    if (find(boundarySeeds.begin(), boundarySeeds.end(), seed) == boundarySeeds.end()) {
-        boundarySeeds.push_back(seed);
-        // if (boundarySeeds.size() >= numSeeds) break;
-        if (boundarySeeds.size() >= static_cast<size_t>(numSeeds)) break;
-    }
-}
-
-// Process these seeds in parallel
-ThreadPool pool(numThreads);
-totalSeeds = boundarySeeds.size();
-completedSeeds = 0;
-
-for (size_t seedIdx = 0; seedIdx < boundarySeeds.size(); seedIdx++) {
-    int seed = boundarySeeds[seedIdx];
-    
-    pool.enqueue([this, seed, seedIdx, initialSolution]() {
-        if (terminationRequested) return;
-        
-        // Start with the initial solution plus this seed
-        vector<int> solution = initialSolution;
-        if (find(solution.begin(), solution.end(), seed) == solution.end()) {
-            solution.push_back(seed);
+    // Verify the initial solution is valid
+    if (!initialSolution.empty()) {
+        if (!isQuasiClique(initialSolution)) {
+            cout << "Warning: Initial solution is not a valid quasi-clique." << endl;
         }
+        if (!isConnected(initialSolution)) {
+            cout << "Warning: Initial solution is not connected." << endl;
+        }
+    } else {
+        cout << "Warning: Initial solution is empty. Proceeding with regular algorithm." << endl;
+        return findLargeQuasiClique(numSeeds, numThreads);
+    }
+
+    // Start with the initial solution as our best
+    bestSolutionOverall = initialSolution;
+
+    // Determine number of threads to use
+    if (numThreads <= 0) {
+        numThreads = thread::hardware_concurrency();
+        if (numThreads == 0) numThreads = 1;
+    }
+
+    // Pre-compute clustering coefficients
+    precomputeClusteringCoefficients(numThreads);
+
+    if (terminationRequested) {
+        cout << "Termination requested during preprocessing. Exiting." << endl;
+        return bestSolutionOverall;
+    }
+
+    // Detect communities
+    cout << "Step 1: Detecting communities in the graph..." << endl;
+    communityDetector.detectCommunities();
+
+    if (terminationRequested) {
+        cout << "Termination requested during community detection. Exiting." << endl;
+        return bestSolutionOverall;
+    }
+
+    // Phase 1: Use the initial solution and expand
+    cout << "Phase 1: Expanding from initial solution of " << initialSolution.size() << " nodes" << endl;
+
+    // First approach: Use the initial solution as a single seed
+    candidateSolutions.push_back(initialSolution);
+
+    // Second approach: Use boundary vertices of the initial solution as seeds
+    unordered_set<int> boundaryCandidates = findBoundaryVertices(initialSolution);
+    vector<int> boundarySeeds(boundaryCandidates.begin(), boundaryCandidates.end());
+
+    // Sort boundary seeds by degree
+    sort(boundarySeeds.begin(), boundarySeeds.end(), [this](int a, int b) {
+        return graph.getDegree(a) > graph.getDegree(b);
+    });
+
+    // Limit the number of boundary seeds to use
+    int boundaryCount = min((int)boundarySeeds.size(), numSeeds);
+    boundarySeeds.resize(boundaryCount);
+
+    // Also add high-degree nodes not in boundary as potential seeds
+    vector<int> degreeSeeds = selectSeedsBasedOnDegree(numSeeds);
+    for (int seed : degreeSeeds) {
+        // Check if seed is already in boundary seeds
+        if (find(boundarySeeds.begin(), boundarySeeds.end(), seed) == boundarySeeds.end()) {
+            boundarySeeds.push_back(seed);
+            // if (boundarySeeds.size() >= numSeeds) break;
+            if (boundarySeeds.size() >= static_cast<size_t>(numSeeds)) break;
+        }
+    }
+
+    // Process these seeds in parallel
+    ThreadPool pool(numThreads);
+    totalSeeds = boundarySeeds.size();
+    completedSeeds = 0;
+
+    for (size_t seedIdx = 0; seedIdx < boundarySeeds.size(); seedIdx++) {
+        int seed = boundarySeeds[seedIdx];
         
-        // Continue expanding from here
-        vector<int> expanded = expandSolutionFromSeed(solution, seedIdx);
-        
-        // Update best solution if better
-        if (expanded.size() > bestSolutionOverall.size() && 
-            isQuasiClique(expanded) && isConnected(expanded)) {
-            lock_guard<mutex> lock(bestSolutionMutex);
-            if (expanded.size() > bestSolutionOverall.size()) {
-                bestSolutionOverall = expanded;
-                solutionFound = true;
-                
-                // Save progress
-                ofstream solutionFile("solution_in_progress.txt");
-                for (int v : bestSolutionOverall) {
-                    solutionFile << v << endl;
+        pool.enqueue([this, seed, seedIdx, initialSolution]() {
+            if (terminationRequested) return;
+            
+            // Start with the initial solution plus this seed
+            vector<int> solution = initialSolution;
+            if (find(solution.begin(), solution.end(), seed) == solution.end()) {
+                solution.push_back(seed);
+            }
+            
+            // Continue expanding from here
+            vector<int> expanded = expandSolutionFromSeed(solution, seedIdx);
+            
+            // Update best solution if better
+            if (expanded.size() > bestSolutionOverall.size() && 
+                isQuasiClique(expanded) && isConnected(expanded)) {
+                lock_guard<mutex> lock(bestSolutionMutex);
+                if (expanded.size() > bestSolutionOverall.size()) {
+                    bestSolutionOverall = expanded;
+                    solutionFound = true;
+                    
+                    // Save progress
+                    ofstream solutionFile("solution_in_progress.txt");
+                    for (int v : bestSolutionOverall) {
+                        solutionFile << v << endl;
+                    }
+                    solutionFile.close();
+                    
+                    cout << "New best solution found: " << bestSolutionOverall.size() << " vertices" << endl;
                 }
-                solutionFile.close();
-                
-                cout << "New best solution found: " << bestSolutionOverall.size() << " vertices" << endl;
+            }
+            
+            // Add to candidate solutions for phase 2
+            if (expanded.size() > initialSolution.size() && 
+                isQuasiClique(expanded) && isConnected(expanded)) {
+                lock_guard<mutex> lock(candidateSolutionsMutex);
+                candidateSolutions.push_back(expanded);
+            }
+            
+            completedSeeds++;
+        });
+    }
+
+    // Wait for all expansions to complete
+    while (completedSeeds < totalSeeds && !terminationRequested) {
+        this_thread::sleep_for(chrono::seconds(5));
+        cout << "Progress: " << completedSeeds << "/" << totalSeeds 
+            << " seeds processed, candidate solutions: " << candidateSolutions.size() << endl;
+    }
+
+    // Sort candidate solutions by size
+    sort(candidateSolutions.begin(), candidateSolutions.end(), 
+        [](const vector<int>& a, const vector<int>& b) { return a.size() > b.size(); });
+
+    // Keep only top 100 solutions to limit computational complexity in phase 2
+    if (candidateSolutions.size() > 300) {
+        std::cout << "Currently, we have " << candidateSolutions.size() << " candidate solutions.\n";
+        cout << "Limiting to top 300 candidate solutions for phase 2" << endl;
+        candidateSolutions.resize(300);
+    }
+
+    // Phase 2: Refine and merge solutions
+    phase2_refineSolutions();
+
+    // Random Restart Logic 
+    // Check if the best solution so far didn't improve much compared to the initial solution.
+    if (bestSolutionOverall.size() <= initialSolution.size() + 5) {
+        cout << "***************Solution not improving significantly. Trying random restarts..." << endl;
+
+        // We'll create 10 perturbed solutions
+        vector<vector<int>> perturbedSolutions;
+        
+        for (int i = 0; i < 10; i++) {
+            vector<int> perturbed = initialSolution;
+            
+            // Remove 10-20% of nodes randomly
+            if (!perturbed.empty()) {
+                int removeCount = static_cast<int>( 
+                        perturbed.size() * (0.1 + (rand() % 10) / 100.0) 
+                );
+                for (int j = 0; j < removeCount; j++) {
+                    if (perturbed.empty()) break;
+                    int indexToRemove = rand() % perturbed.size();
+                    perturbed.erase(perturbed.begin() + indexToRemove);
+                }
+            }
+            
+            // Add some high-degree neighbors
+            unordered_set<int> boundary;
+            unordered_set<int> solutionSet(perturbed.begin(), perturbed.end());
+            
+            for (int node : perturbed) {
+                for (int neighbor : graph.getNeighbors(node)) {
+                    if (solutionSet.find(neighbor) == solutionSet.end()) {
+                        boundary.insert(neighbor);
+                    }
+                }
+            }
+            
+            vector<int> boundaryVec(boundary.begin(), boundary.end());
+            sort(boundaryVec.begin(), boundaryVec.end(), [this](int a, int b) {
+                return graph.getDegree(a) > graph.getDegree(b);
+            });
+            
+            // Try adding up to 10 highest-degree neighbors
+            for (int j = 0; j < min(10, (int)boundaryVec.size()); j++) {
+                perturbed.push_back(boundaryVec[j]);
+                if (!isQuasiClique(perturbed) || !isConnected(perturbed)) {
+                    // If adding this node breaks quasi-clique or connectivity,
+                    // remove it and stop adding more
+                    perturbed.pop_back();
+                }
+            }
+            
+            // Only keep if it's valid
+            if (isQuasiClique(perturbed) && isConnected(perturbed)) {
+                perturbedSolutions.push_back(perturbed);
             }
         }
         
-        // Add to candidate solutions for phase 2
-        if (expanded.size() > initialSolution.size() && 
-            isQuasiClique(expanded) && isConnected(expanded)) {
-            lock_guard<mutex> lock(candidateSolutionsMutex);
-            candidateSolutions.push_back(expanded);
+        // Add these perturbed solutions to candidate solutions
+        for (const auto& perturbed : perturbedSolutions) {
+            candidateSolutions.push_back(perturbed);
         }
         
-        completedSeeds++;
-    });
-}
+        // Run another round of merging after random restarts
+        cout << "Running additional merge phase with perturbed solutions..." << endl;
+        phase2_refineSolutions();
+    }
 
-// Wait for all expansions to complete
-while (completedSeeds < totalSeeds && !terminationRequested) {
-    this_thread::sleep_for(chrono::seconds(5));
-    cout << "Progress: " << completedSeeds << "/" << totalSeeds 
-         << " seeds processed, candidate solutions: " << candidateSolutions.size() << endl;
-}
-
-// Sort candidate solutions by size
-sort(candidateSolutions.begin(), candidateSolutions.end(), 
-     [](const vector<int>& a, const vector<int>& b) { return a.size() > b.size(); });
-
-// Keep only top 100 solutions to limit computational complexity in phase 2
-if (candidateSolutions.size() > 300) {
-    std::cout << "Currently, we have " << candidateSolutions.size() << " candidate solutions.\n";
-    cout << "Limiting to top 300 candidate solutions for phase 2" << endl;
-    candidateSolutions.resize(300);
-}
-
-// Phase 2: Refine and merge solutions
-phase2_refineSolutions();
-
-return bestSolutionOverall;
-}
+    return bestSolutionOverall;
+    }
 
 // Expand from an existing solution
 vector<int> TwoPhaseQuasiCliqueSolver::expandSolutionFromSeed(
