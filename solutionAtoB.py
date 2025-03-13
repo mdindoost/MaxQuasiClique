@@ -47,6 +47,6 @@ def common_nodes(file1, file2):
 if __name__ == "__main__":
     # Update with the actual paths of your two files:
     file_a = "mapped_benchmark_162_ids.txt"
-    file_b = "solution_in_progress.txt"
+    file_b = "solution.txt"
 
     common_nodes(file_a, file_b)

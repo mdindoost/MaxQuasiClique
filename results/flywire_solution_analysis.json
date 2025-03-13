@@ -1,12 +1,12 @@
 {
-  "num_vertices": 140,
-  "num_edges": 4866,
-  "possible_edges": 9730,
-  "density": 0.5001027749229188,
-  "avg_degree": 69.51428571428572,
-  "avg_clustering": 0.7486172901738706,
+  "num_vertices": 171,
+  "num_edges": 7278,
+  "possible_edges": 14535,
+  "density": 0.5007223942208462,
+  "avg_degree": 85.12280701754386,
+  "avg_clustering": 0.6479021044527784,
   "num_components": 1,
-  "largest_component_size": 140,
+  "largest_component_size": 171,
   "diameter": 3,
   "is_quasi_clique": true
 }
