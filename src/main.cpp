@@ -51,7 +51,6 @@ int main(int argc, char* argv[]) {
     TwoPhaseQuasiCliqueSolver solver(graph);
     
     // Set community merger threshold
-    //std::cout << "*********************************************Connectivity threshold main: " << connectivityThreshold << std::endl;
     solver.setCommunityConnectivityThreshold(connectivityThreshold);
     
     // Measure execution time

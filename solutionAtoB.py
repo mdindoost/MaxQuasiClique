@@ -40,8 +40,8 @@ def common_nodes(file1, file2):
     # Print them if you want to see the actual overlap
     if common:
         print("Common node IDs:")
-        for node in sorted(common):
-            print(node)
+        #for node in sorted(common):
+            #print(node)
 
 # Example usage:
 if __name__ == "__main__":

@@ -32,6 +32,16 @@ private:
     CommunityDetector communityDetector;
     std::vector<int> initialSeedVertices;  // Added for warm-start capability
     
+        /**
+     * Compute k-core values for all vertices
+     */
+    std::vector<std::pair<int, int>> computeKCoreDecomposition();
+    
+    /**
+     * Select seeds based on k-core decomposition
+     */
+    std::vector<int> selectSeedsBasedOnKCore(int numSeeds);
+
     /**
      * Pre-compute clustering coefficients
      */
@@ -112,45 +122,48 @@ private:
     int countConnectionsToSet(int candidate, const std::vector<int>& nodeSet);
     std::vector<int> expandSolutionFromSeed(const std::vector<int>& startingSolution, int seedIdx);
     
-        /**
-     * Compute k-core values for all vertices
-     */
-    std::vector<std::pair<int, int>> computeKCoreDecomposition();
-    
-    /**
-     * Select seeds based on k-core decomposition
-     */
-    std::vector<int> selectSeedsBasedOnKCore(int numSeeds);
-    /**
+    std::vector<int> attemptToMerge(const std::vector<int>& solution1, const std::vector<int>& solution2) const;
+
+       /**
      * Select seeds using combined k-core and community awareness
      */
     std::vector<int> selectSeedsWithKCoreAndCommunityAwareness(int numSeeds);
-
     /**
      * Perform local search to improve a solution
      */
     std::vector<int> performLocalSearch(const std::vector<int>& initialSolution);
 
-    double communityConnectivityThreshold = 0.3;
+    double communityConnectivityThreshold = 0.1;
 
-   // Used for minimal overlap merging phase
-   std::vector<std::vector<int>> allFoundSolutions;
-   std::mutex allFoundSolutionsMutex;
-   
-   /**
-    * Merge solutions with minimal overlap
-    */
-   std::vector<int> minimalOverlapMergingPhase();
-   
-   /**
-    * Attempt to merge two solutions, with fallback strategies
-    */
-   std::vector<int> attemptToMerge(const std::vector<int>& solution1, const std::vector<int>& solution2) const;
-   
-   /**
-    * Calculate overlap between two solutions
-    */
-   int calculateOverlap(const std::vector<int>& solution1, const std::vector<int>& solution2) const;
+      /**
+     * Improved expansion method with more thorough cluster exploration
+     */
+    std::vector<int> improvedExpansionMethod(const std::vector<int>& initialSolution);
+    
+    /**
+     * Evaluate a candidate vertex for addition to a solution
+     */
+    double evaluateCandidate(int vertex, const std::vector<int>& solution);
+
+        /**
+     * Enhanced k-core based seed selection focusing on highest k-cores
+     */
+    std::vector<int> enhancedKCoreSeedSelection(int numSeeds);
+
+        /**
+     * Multi-round exploration that revisits promising areas of the graph
+     */
+    void multiRoundExploration(int numSeeds, int numRounds, int numThreads);
+    
+    /**
+     * Get boundary vertices to explore from existing solutions
+     */
+    std::vector<int> getBoundaryVerticesToExplore(const std::vector<std::vector<int>>& solutions, int maxSeeds = 100);
+    
+    /**
+     * Get perturbed seeds from existing solutions
+     */
+    std::vector<int> getPerturbedSeeds(const std::vector<std::vector<int>>& solutions, int numSeeds);
 
 public:
     /**

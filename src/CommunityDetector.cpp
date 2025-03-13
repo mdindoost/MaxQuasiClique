@@ -8,7 +8,6 @@ using namespace std;
 
 CommunityDetector::CommunityDetector(const Graph& g) : graph(g), numCommunities(0) {}
 
-
 double CommunityDetector::calculateInterCommunityConnectivity(int community1, int community2) const {
     // Get vertices in each community
     std::vector<int> vertices1;

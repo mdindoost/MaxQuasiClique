@@ -57,7 +57,7 @@ public:
      * Find boundary vertices (vertices with neighbors in different communities)
      */
     std::vector<int> findBoundaryVertices() const;
-        /**
+      /**
      * Calculate inter-community connectivity
      */
     double calculateInterCommunityConnectivity(int community1, int community2) const;
