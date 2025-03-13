@@ -1842,100 +1842,295 @@ void TwoPhaseQuasiCliqueSolver::phase1_findCandidateSolutions(int numSeeds, int 
     
 //     cout << "Phase 2 complete. Best solution size: " << bestSolutionOverall.size() << endl;
 // }
+bool TwoPhaseQuasiCliqueSolver::worthTryingMerge(const std::vector<int>& a, const std::vector<int>& b) {
+    // Skip if size difference is too large
+    if (a.size() > b.size() * 3 || b.size() > a.size() * 3) {
+        return false;
+    }
+    
+    // Quick check using a sample of vertices
+    const int SAMPLE_SIZE = std::min(10, (int)std::min(a.size(), b.size()));
+    if (SAMPLE_SIZE < 3) return true; // Skip sampling for very small solutions
+    
+    int sharedCount = 0;
+    
+    for (int i = 0; i < SAMPLE_SIZE; i++) {
+        int vertexA = a[i * a.size() / SAMPLE_SIZE];
+        if (std::find(b.begin(), b.end(), vertexA) != b.end()) {
+            sharedCount++;
+        }
+    }
+    
+    // If sample suggests very low overlap, skip
+    return (double)sharedCount / SAMPLE_SIZE >= 0.1;
+}
+
+bool TwoPhaseQuasiCliqueSolver::haveSignificantOverlap(const std::vector<int>& a, const std::vector<int>& b) {
+    // Calculate a fast approximation of Jaccard similarity using hashing
+    
+    // Use a smaller set for faster lookup
+    const std::vector<int>& smaller = (a.size() <= b.size()) ? a : b;
+    const std::vector<int>& larger = (a.size() <= b.size()) ? b : a;
+    
+    // Create a set for the smaller collection
+    std::unordered_set<int> smallerSet(smaller.begin(), smaller.end());
+    
+    // Count intersection
+    int intersection = 0;
+    for (int v : larger) {
+        if (smallerSet.count(v) > 0) {
+            intersection++;
+        }
+    }
+    
+    // Calculate approximate Jaccard (intersection over union)
+    double approximateJaccard = (double)intersection / (a.size() + b.size() - intersection);
+    
+    // Return true if there's at least some meaningful overlap
+    return approximateJaccard >= 0.1;
+}
+
+std::vector<int> TwoPhaseQuasiCliqueSolver::mergeSolutionsInCluster(const std::vector<int>& clusterIndices) {
+    if (clusterIndices.empty()) return std::vector<int>();
+    
+    // Start with the largest solution in the cluster
+    int bestIdx = clusterIndices[0];
+    for (int idx : clusterIndices) {
+        if (candidateSolutions[idx].size() > candidateSolutions[bestIdx].size()) {
+            bestIdx = idx;
+        }
+    }
+    
+    std::vector<int> bestSolution = candidateSolutions[bestIdx];
+    bool improved = true;
+    
+    // Keep trying to merge until no more improvements
+    while (improved && !terminationRequested) {
+        improved = false;
+        
+        for (int idx : clusterIndices) {
+            if (idx == bestIdx) continue;
+            
+            // Skip if not worth trying
+            if (!worthTryingMerge(bestSolution, candidateSolutions[idx])) {
+                continue;
+            }
+            
+            // Try to merge
+            std::vector<int> merged = attemptToMerge(bestSolution, candidateSolutions[idx]);
+            
+            if (!merged.empty() && merged.size() > bestSolution.size()) {
+                bestSolution = merged;
+                improved = true;
+                break;  // Start over with new best solution
+            }
+        }
+    }
+    
+    // Return the best solution if it improved on the original
+    if (bestSolution.size() > candidateSolutions[bestIdx].size()) {
+        return bestSolution;
+    }
+    
+    return std::vector<int>();
+}
+
+void TwoPhaseQuasiCliqueSolver::fastClusterAndMergeSolutions() {
+    if (candidateSolutions.size() <= 1) return;
+    
+    std::cout << "Fast clustering and merging of " << candidateSolutions.size() << " solutions..." << std::endl;
+    auto startTime = std::chrono::high_resolution_clock::now();
+    
+    // Calculate similarity matrix only for solutions above a certain size
+    // Sorting solutions by size (descending)
+    std::sort(candidateSolutions.begin(), candidateSolutions.end(), 
+        [](const std::vector<int>& a, const std::vector<int>& b) { 
+            return a.size() > b.size(); 
+        });
+    
+    const int MIN_SIZE_TO_CONSIDER = std::max(10, (int)(candidateSolutions[0].size() * 0.3));
+    
+    std::vector<int> solutionsToConsider;
+    for (size_t i = 0; i < candidateSolutions.size(); i++) {
+        if (candidateSolutions[i].size() >= static_cast<size_t>(MIN_SIZE_TO_CONSIDER)) {
+
+            solutionsToConsider.push_back(i);
+        }
+    }
+    
+    std::cout << "  Considering " << solutionsToConsider.size() << " solutions for merging" << std::endl;
+    
+    // Create clusters based on similarity
+    std::vector<std::vector<int>> clusters;
+    std::vector<bool> assigned(solutionsToConsider.size(), false);
+    
+    for (size_t i = 0; i < solutionsToConsider.size(); i++) {
+        if (assigned[i]) continue;
+        
+        std::vector<int> cluster = {solutionsToConsider[i]};
+        assigned[i] = true;
+        
+        // Find similar solutions without computing all similarities
+        for (size_t j = i + 1; j < solutionsToConsider.size(); j++) {
+            if (assigned[j]) continue;
+            
+            // Quick check: do they share enough vertices to be worth checking?
+            if (haveSignificantOverlap(candidateSolutions[solutionsToConsider[i]], 
+                                     candidateSolutions[solutionsToConsider[j]])) {
+                cluster.push_back(solutionsToConsider[j]);
+                assigned[j] = true;
+            }
+        }
+        
+        clusters.push_back(cluster);
+    }
+    
+    std::cout << "  Created " << clusters.size() << " clusters of similar solutions" << std::endl;
+    
+    // Process each cluster in parallel
+    std::vector<std::vector<int>> mergedSolutions;
+    std::mutex mergedSolutionsMutex;
+    
+    // Use thread pool for parallel processing
+    ThreadPool pool(std::thread::hardware_concurrency());
+    std::atomic<int> completedClusters(0);
+    int totalClusters = clusters.size();
+    
+    for (size_t c = 0; c < clusters.size(); c++) {
+        // Skip trivial clusters
+        if (clusters[c].size() <= 1) {
+            completedClusters++;
+            continue;
+        }
+        
+        pool.enqueue([this, c, &clusters, &mergedSolutions, &mergedSolutionsMutex, &completedClusters, totalClusters]() {
+            if (terminationRequested) return;
+            
+            std::vector<int> localMerged = mergeSolutionsInCluster(clusters[c]);
+            
+            if (!localMerged.empty()) {
+                std::lock_guard<std::mutex> lock(mergedSolutionsMutex);
+                mergedSolutions.push_back(localMerged);
+            }
+            
+            int completed = ++completedClusters;
+            if (completed % 10 == 0 || completed == totalClusters) {
+                std::cout << "    Processed " << completed << "/" << totalClusters << " clusters" << std::endl;
+            }
+        });
+    }
+    
+    // Wait for all clusters to complete
+    while (completedClusters < totalClusters && !terminationRequested) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime).count();
+    
+    std::cout << "  Merging completed in " << duration << " seconds." << std::endl;
+    std::cout << "  Found " << mergedSolutions.size() << " improved solutions" << std::endl;
+    
+    // Add new solutions to candidate pool
+    candidateSolutions.insert(candidateSolutions.end(), mergedSolutions.begin(), mergedSolutions.end());
+    
+    // Sort solutions by size (descending)
+    std::sort(candidateSolutions.begin(), candidateSolutions.end(), 
+        [](const std::vector<int>& a, const std::vector<int>& b) { 
+            return a.size() > b.size(); 
+        });
+    
+    // Limit the number of candidates
+    const int MAX_CANDIDATES = 500;
+    if (candidateSolutions.size() > MAX_CANDIDATES) {
+        candidateSolutions.resize(MAX_CANDIDATES);
+    }
+}
+
 void TwoPhaseQuasiCliqueSolver::phase2_refineSolutions() {
-    cout << "Phase 2: Refining and merging solutions (enhanced version)..." << endl;
+    std::cout << "Phase 2: Refining and merging solutions (fast version)..." << std::endl;
     
     if (candidateSolutions.empty()) {
-        cout << "No candidate solutions to refine." << endl;
+        std::cout << "No candidate solutions to refine." << std::endl;
         return;
     }
     
-    // First, try to merge solutions
-    cout << "Attempting to merge " << candidateSolutions.size() << " solutions..." << endl;
-        
+    // First, try to merge solutions using fast clustering approach
+    std::cout << "Attempting to merge solutions using fast clustering..." << std::endl;
+    
+    auto startTime = std::chrono::high_resolution_clock::now();
+    
     bool improved = true;
     int mergeIterations = 0;
     
-    // Increased max iterations and relaxed similarity thresholds
-    while (improved && !terminationRequested && mergeIterations < 20) {
+    // Perform multiple iterations of clustering and merging
+    const int MAX_ITERATIONS = 5;
+    
+    while (improved && !terminationRequested && mergeIterations < MAX_ITERATIONS) {
+        int solutionsBeforeMerge = candidateSolutions.size();
+        int bestSizeBeforeMerge = candidateSolutions.empty() ? 0 : candidateSolutions[0].size();
+        
         improved = false;
         mergeIterations++;
         
-        cout << "Merge iteration " << mergeIterations << endl;
+        std::cout << "Merge iteration " << mergeIterations << " of " << MAX_ITERATIONS << std::endl;
         
-        vector<vector<int>> newSolutions;
+        // Fast clustering and merging
+        fastClusterAndMergeSolutions();
         
-        // Try all pairs of solutions
-        for (size_t i = 0; i < candidateSolutions.size(); i++) {
-            for (size_t j = i + 1; j < candidateSolutions.size(); j++) {
-                // Calculate Jaccard similarity
-                double similarity = calculateJaccardSimilarity(candidateSolutions[i], candidateSolutions[j]);
-                
-                // Extremely relaxed similarity range to try more combinations
-                if (similarity >= 0.01 && similarity <= 0.99) {
-                    // Try the aggressive merge approach
-                    vector<int> merged = attemptToMerge(candidateSolutions[i], candidateSolutions[j]);
-                    
-                    if (!merged.empty() && merged.size() > max(candidateSolutions[i].size(), candidateSolutions[j].size())) {
-                        newSolutions.push_back(merged);
-                        improved = true;
-                        cout << "  Merged solutions of sizes " << candidateSolutions[i].size() 
-                             << " and " << candidateSolutions[j].size() 
-                             << " into new solution of size " << merged.size() << endl;
-                    }
-                }
-                
-                if (terminationRequested) break;
-            }
-            if (terminationRequested) break;
-        }
+        // Sort solutions by size (should already be done, but just to be sure)
+        std::sort(candidateSolutions.begin(), candidateSolutions.end(), 
+            [](const std::vector<int>& a, const std::vector<int>& b) { 
+                return a.size() > b.size(); 
+            });
         
-        // Add new solutions to candidate pool
-        for (const auto& solution : newSolutions) {
-            candidateSolutions.push_back(solution);
-        }
+        // Check if we've improved
+        int bestSizeAfterMerge = candidateSolutions.empty() ? 0 : candidateSolutions[0].size();
+        improved = (bestSizeAfterMerge > bestSizeBeforeMerge);
         
-        // Sort solutions by size (descending)
-        sort(candidateSolutions.begin(), candidateSolutions.end(), 
-             [](const vector<int>& a, const vector<int>& b) { return a.size() > b.size(); });
-        
-        cout << "  After merge iteration " << mergeIterations 
-             << ": " << candidateSolutions.size() << " candidate solutions" << endl;
+        std::cout << "  After merge iteration " << mergeIterations 
+                 << ": " << candidateSolutions.size() << " candidate solutions" << std::endl;
         
         // Update best solution
         if (!candidateSolutions.empty() && candidateSolutions[0].size() > bestSolutionOverall.size()) {
             bestSolutionOverall = candidateSolutions[0];
             
             // Save best solution
-            ofstream solutionFile("solution_in_progress.txt");
+            std::ofstream solutionFile("solution_in_progress.txt");
             for (int v : bestSolutionOverall) {
-                solutionFile << v << endl;
+                solutionFile << v << std::endl;
             }
             solutionFile.close();
             
-            cout << "New best solution found: " << bestSolutionOverall.size() << " vertices" << endl;
+            std::cout << "New best solution found: " << bestSolutionOverall.size() << " vertices" << std::endl;
         }
         
-        // Keep more candidates for more opportunities to merge
-        if (candidateSolutions.size() > 500) {
-            candidateSolutions.resize(500);
+        // If no new solutions were created, we're done
+        if (candidateSolutions.size() <= static_cast<size_t>(solutionsBeforeMerge) && !improved) {
+            std::cout << "  No new solutions created, stopping merge iterations." << std::endl;
+            break;
         }
     }
     
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(endTime - startTime).count();
+    
+    std::cout << "Merging phase completed in " << duration << " seconds." << std::endl;
+    
     // After merging, try to improve individual solutions using local search
     if (!candidateSolutions.empty() && !terminationRequested) {
-        cout << "Performing local search on " << min(10, (int)candidateSolutions.size()) 
-             << " best solutions..." << endl;
+        std::cout << "Performing local search on " << std::min(5, (int)candidateSolutions.size()) 
+                 << " best solutions..." << std::endl;
         
-        vector<vector<int>> improvedSolutions;
+        std::vector<std::vector<int>> improvedSolutions;
         
         // Only try local search on top solutions
-        for (int i = 0; i < min(10, (int)candidateSolutions.size()); i++) {
-            vector<int> improved = performLocalSearch(candidateSolutions[i]);
+        for (int i = 0; i < std::min(5, (int)candidateSolutions.size()); i++) {
+            std::vector<int> improved = performLocalSearch(candidateSolutions[i]);
             
             if (improved.size() > candidateSolutions[i].size()) {
-                cout << "  Improved solution from " << candidateSolutions[i].size() 
-                     << " to " << improved.size() << " vertices" << endl;
+                std::cout << "  Improved solution from " << candidateSolutions[i].size() 
+                         << " to " << improved.size() << " vertices" << std::endl;
                 
                 improvedSolutions.push_back(improved);
                 
@@ -1944,13 +2139,13 @@ void TwoPhaseQuasiCliqueSolver::phase2_refineSolutions() {
                     bestSolutionOverall = improved;
                     
                     // Save best solution
-                    ofstream solutionFile("solution_in_progress.txt");
+                    std::ofstream solutionFile("solution_in_progress.txt");
                     for (int v : bestSolutionOverall) {
-                        solutionFile << v << endl;
+                        solutionFile << v << std::endl;
                     }
                     solutionFile.close();
                     
-                    cout << "New best solution found: " << bestSolutionOverall.size() << " vertices" << endl;
+                    std::cout << "New best solution found: " << bestSolutionOverall.size() << " vertices" << std::endl;
                 }
             }
             
@@ -1963,12 +2158,346 @@ void TwoPhaseQuasiCliqueSolver::phase2_refineSolutions() {
         }
         
         // Sort solutions by size (descending)
-        sort(candidateSolutions.begin(), candidateSolutions.end(), 
-             [](const vector<int>& a, const vector<int>& b) { return a.size() > b.size(); });
+        std::sort(candidateSolutions.begin(), candidateSolutions.end(), 
+            [](const std::vector<int>& a, const std::vector<int>& b) { 
+                return a.size() > b.size(); 
+            });
     }
     
-    cout << "Phase 2 complete. Best solution size: " << bestSolutionOverall.size() << endl;
+    std::cout << "Phase 2 complete. Best solution size: " << bestSolutionOverall.size() << std::endl;
 }
+std::vector<std::vector<int>> TwoPhaseQuasiCliqueSolver::findConnectedComponents(const std::vector<int>& nodes) {
+    if (nodes.empty()) return {};
+    
+    // Create a lookup for fast membership testing
+    std::unordered_set<int> nodeSet(nodes.begin(), nodes.end());
+    
+    // Create adjacency list for the subgraph
+    std::unordered_map<int, std::vector<int>> subgraphAdj;
+    for (int u : nodes) {
+        subgraphAdj[u] = std::vector<int>();
+        for (int v : graph.getNeighbors(u)) {
+            if (u != v && nodeSet.count(v) > 0) {
+                subgraphAdj[u].push_back(v);
+            }
+        }
+    }
+    
+    // Keep track of visited nodes
+    std::unordered_set<int> visited;
+    
+    // Store all connected components
+    std::vector<std::vector<int>> components;
+    
+    // Perform BFS for each unvisited node
+    for (int startNode : nodes) {
+        if (visited.count(startNode) > 0) continue;
+        
+        // This will store the current component
+        std::vector<int> component;
+        
+        // BFS
+        std::queue<int> q;
+        q.push(startNode);
+        visited.insert(startNode);
+        
+        while (!q.empty()) {
+            int current = q.front();
+            q.pop();
+            
+            component.push_back(current);
+            
+            for (int neighbor : subgraphAdj[current]) {
+                if (visited.count(neighbor) == 0) {
+                    visited.insert(neighbor);
+                    q.push(neighbor);
+                }
+            }
+        }
+        
+        components.push_back(component);
+    }
+    
+    return components;
+}
+
+std::vector<int> TwoPhaseQuasiCliqueSolver::repairSolution(const std::vector<int>& solution) {
+    // First, check what's wrong
+    bool isQuasi = isQuasiClique(solution);
+    bool isConn = isConnected(solution);
+    
+    std::cout << "Repairing solution: isQuasiClique=" << isQuasi << ", isConnected=" << isConn << std::endl;
+    
+    if (isQuasi && isConn) return solution; // Nothing to repair
+    
+    std::vector<int> result = solution;
+    
+    // First, handle connectivity issues
+    if (!isConn) {
+        // Find the largest connected component
+        std::vector<std::vector<int>> components = findConnectedComponents(result);
+        if (!components.empty()) {
+            // Sort by size (descending)
+            std::sort(components.begin(), components.end(), 
+                [](const std::vector<int>& a, const std::vector<int>& b) {
+                    return a.size() > b.size();
+                });
+            
+            std::cout << "  Found " << components.size() << " components, largest has " 
+                      << components[0].size() << " nodes" << std::endl;
+            
+            result = components[0]; // Use largest component
+        }
+    }
+    
+    // Now handle quasi-clique property if needed
+    if (!isQuasiClique(result)) {
+        // Calculate connectivity of each vertex
+        std::vector<std::pair<int, double>> vertexConnectivity;
+        for (int v : result) {
+            int connections = 0;
+            for (int u : result) {
+                if (u != v && graph.hasEdge(u, v)) {
+                    connections++;
+                }
+            }
+            double connectivity = (double)connections / (result.size() - 1);
+            vertexConnectivity.push_back({v, connectivity});
+        }
+        
+        // Sort by connectivity (lowest first)
+        std::sort(vertexConnectivity.begin(), vertexConnectivity.end(),
+            [](const std::pair<int, double>& a, const std::pair<int, double>& b) {
+                return a.second < b.second;
+            });
+        
+        std::cout << "  Removing low-connectivity nodes to reach quasi-clique property..." << std::endl;
+        
+        // Iteratively remove least connected vertices until we have a valid quasi-clique
+        std::vector<int> workingSolution = result;
+        int removed = 0;
+        
+        for (size_t i = 0; i < vertexConnectivity.size(); i++) {
+            int vertexToRemove = vertexConnectivity[i].first;
+            
+            // Skip if we'd remove too many vertices
+            if (removed > vertexConnectivity.size() * 0.4) {
+                std::cout << "  Giving up after removing 40% of vertices" << std::endl;
+                break;
+            }
+            
+            // Remove the vertex
+            workingSolution.erase(std::remove(workingSolution.begin(), workingSolution.end(), vertexToRemove), 
+                           workingSolution.end());
+            removed++;
+            
+            // Check if we have a valid solution now
+            if (isQuasiClique(workingSolution) && isConnected(workingSolution)) {
+                result = workingSolution;
+                std::cout << "  Found valid solution after removing " << removed << " vertices" << std::endl;
+                break;
+            }
+        }
+    }
+    
+    std::cout << "Repair complete: original size=" << solution.size() 
+              << ", repaired size=" << result.size() << std::endl;
+    
+    return result;
+}
+
+std::vector<int> TwoPhaseQuasiCliqueSolver::findLargestValidSubset(const std::vector<int>& solution) {
+    std::cout << "Finding largest valid subset of solution with " << solution.size() << " vertices..." << std::endl;
+    
+    if (solution.empty()) return {};
+    
+    // Start with high degree nodes in the solution
+    std::vector<std::pair<int, int>> verticesWithDegree;
+    for (int v : solution) {
+        // Count connections within the solution
+        int connections = 0;
+        for (int u : solution) {
+            if (v != u && graph.hasEdge(v, u)) {
+                connections++;
+            }
+        }
+        verticesWithDegree.push_back({v, connections});
+    }
+    
+    // Sort by degree in solution (descending)
+    std::sort(verticesWithDegree.begin(), verticesWithDegree.end(),
+         [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+             return a.second > b.second;
+         });
+    
+    // Start with top 20% highest degree vertices
+    int startSize = std::max(5, (int)(solution.size() * 0.2));
+    std::vector<int> subset;
+    for (int i = 0; i < std::min(startSize, (int)verticesWithDegree.size()); i++) {
+        subset.push_back(verticesWithDegree[i].first);
+    }
+    
+    // Check if our initial subset is valid
+    if (!isQuasiClique(subset) || !isConnected(subset)) {
+        std::cout << "  Initial subset is not valid, starting with smaller core" << std::endl;
+        
+        // Start with just the top 5 vertices
+        subset.clear();
+        for (int i = 0; i < std::min(5, (int)verticesWithDegree.size()); i++) {
+            subset.push_back(verticesWithDegree[i].first);
+        }
+        
+        // If still invalid, try with just the highest degree vertex
+        if (!isQuasiClique(subset) || !isConnected(subset)) {
+            std::cout << "  Smaller core still invalid, starting with single vertex" << std::endl;
+            subset = {verticesWithDegree[0].first};
+        }
+    }
+    
+    // Try to add remaining vertices in order of degree
+    std::cout << "  Growing from core of " << subset.size() << " vertices" << std::endl;
+    
+    for (size_t i = subset.size(); i < verticesWithDegree.size(); i++) {
+        int candidate = verticesWithDegree[i].first;
+        std::vector<int> testSubset = subset;
+        testSubset.push_back(candidate);
+        
+        if (isQuasiClique(testSubset) && isConnected(testSubset)) {
+            subset = testSubset;
+        }
+    }
+    
+    std::cout << "Found valid subset of size " << subset.size() << std::endl;
+    return subset;
+}
+
+// void TwoPhaseQuasiCliqueSolver::phase2_refineSolutions() {
+//     cout << "Phase 2: Refining and merging solutions (enhanced version)..." << endl;
+    
+//     if (candidateSolutions.empty()) {
+//         cout << "No candidate solutions to refine." << endl;
+//         return;
+//     }
+    
+//     // First, try to merge solutions
+//     cout << "Attempting to merge " << candidateSolutions.size() << " solutions..." << endl;
+
+//     bool improved = true;
+//     int mergeIterations = 0;
+    
+//     // Increased max iterations and relaxed similarity thresholds
+//     while (improved && !terminationRequested && mergeIterations < 20) {
+//         improved = false;
+//         mergeIterations++;
+        
+//         cout << "Merge iteration " << mergeIterations << endl;
+        
+//         vector<vector<int>> newSolutions;
+        
+//         // Try all pairs of solutions
+//         for (size_t i = 0; i < candidateSolutions.size(); i++) {
+//             for (size_t j = i + 1; j < candidateSolutions.size(); j++) {
+//                 // Calculate Jaccard similarity
+//                 double similarity = calculateJaccardSimilarity(candidateSolutions[i], candidateSolutions[j]);
+                
+//                 // Extremely relaxed similarity range to try more combinations
+//                 if (similarity >= 0.01 && similarity <= 0.99) {
+//                     // Try the aggressive merge approach
+//                     vector<int> merged = attemptToMerge(candidateSolutions[i], candidateSolutions[j]);
+                    
+//                     if (!merged.empty() && merged.size() > max(candidateSolutions[i].size(), candidateSolutions[j].size())) {
+//                         newSolutions.push_back(merged);
+//                         improved = true;
+//                         cout << "  Merged solutions of sizes " << candidateSolutions[i].size() 
+//                              << " and " << candidateSolutions[j].size() 
+//                              << " into new solution of size " << merged.size() << endl;
+//                     }
+//                 }
+                
+//                 if (terminationRequested) break;
+//             }
+//             if (terminationRequested) break;
+//         }
+        
+//         // Add new solutions to candidate pool
+//         for (const auto& solution : newSolutions) {
+//             candidateSolutions.push_back(solution);
+//         }
+        
+//         // Sort solutions by size (descending)
+//         sort(candidateSolutions.begin(), candidateSolutions.end(), 
+//              [](const vector<int>& a, const vector<int>& b) { return a.size() > b.size(); });
+        
+//         cout << "  After merge iteration " << mergeIterations 
+//              << ": " << candidateSolutions.size() << " candidate solutions" << endl;
+        
+//         // Update best solution
+//         if (!candidateSolutions.empty() && candidateSolutions[0].size() > bestSolutionOverall.size()) {
+//             bestSolutionOverall = candidateSolutions[0];
+            
+//             // Save best solution
+//             ofstream solutionFile("solution_in_progress.txt");
+//             for (int v : bestSolutionOverall) {
+//                 solutionFile << v << endl;
+//             }
+//             solutionFile.close();
+            
+//             cout << "New best solution found: " << bestSolutionOverall.size() << " vertices" << endl;
+//         }
+        
+//         // Keep more candidates for more opportunities to merge
+//         if (candidateSolutions.size() > 500) {
+//             candidateSolutions.resize(500);
+//         }
+//     }
+    
+//     // After merging, try to improve individual solutions using local search
+//     if (!candidateSolutions.empty() && !terminationRequested) {
+//         cout << "Performing local search on " << min(10, (int)candidateSolutions.size()) 
+//              << " best solutions..." << endl;
+        
+//         vector<vector<int>> improvedSolutions;
+        
+//         // Only try local search on top solutions
+//         for (int i = 0; i < min(10, (int)candidateSolutions.size()); i++) {
+//             vector<int> improved = performLocalSearch(candidateSolutions[i]);
+            
+//             if (improved.size() > candidateSolutions[i].size()) {
+//                 cout << "  Improved solution from " << candidateSolutions[i].size() 
+//                      << " to " << improved.size() << " vertices" << endl;
+                
+//                 improvedSolutions.push_back(improved);
+                
+//                 // Update best solution if needed
+//                 if (improved.size() > bestSolutionOverall.size()) {
+//                     bestSolutionOverall = improved;
+                    
+//                     // Save best solution
+//                     ofstream solutionFile("solution_in_progress.txt");
+//                     for (int v : bestSolutionOverall) {
+//                         solutionFile << v << endl;
+//                     }
+//                     solutionFile.close();
+                    
+//                     cout << "New best solution found: " << bestSolutionOverall.size() << " vertices" << endl;
+//                 }
+//             }
+            
+//             if (terminationRequested) break;
+//         }
+        
+//         // Add improved solutions to candidate pool
+//         for (const auto& solution : improvedSolutions) {
+//             candidateSolutions.push_back(solution);
+//         }
+        
+//         // Sort solutions by size (descending)
+//         sort(candidateSolutions.begin(), candidateSolutions.end(), 
+//              [](const vector<int>& a, const vector<int>& b) { return a.size() > b.size(); });
+//     }
+    
+//     cout << "Phase 2 complete. Best solution size: " << bestSolutionOverall.size() << endl;
+// }
 // void TwoPhaseQuasiCliqueSolver::phase2_refineSolutions() {
 //     cout << "Phase 2: Refining and merging solutions (aggressive mode)..." << endl;
     
@@ -2354,7 +2883,29 @@ std::vector<int> TwoPhaseQuasiCliqueSolver::findLargeQuasiClique(int numSeeds, i
     if (terminationRequested) {
         std::cout << "Termination requested during final refinement. Returning best solution found so far." << std::endl;
     }
-    
+    // Final validation
+    if (!bestSolutionOverall.empty()) {
+        // Check if our best solution is valid
+        if (!isQuasiClique(bestSolutionOverall) || !isConnected(bestSolutionOverall)) {
+            std::cout << "WARNING: Best solution fails validation!" << std::endl;
+            
+            // Attempt to repair
+            std::vector<int> repairedSolution = repairSolution(bestSolutionOverall);
+            
+            std::cout << "Repaired solution size: " << repairedSolution.size() 
+                      << " (was: " << bestSolutionOverall.size() << ")" << std::endl;
+            
+            // Only use repaired if it's still substantial
+            if (repairedSolution.size() > bestSolutionOverall.size() * 0.8) {
+                bestSolutionOverall = repairedSolution;
+            } else {
+                // If repair lost too many vertices, try to find a valid subsolution
+                std::cout << "Repair lost too many vertices, finding largest valid subset..." << std::endl;
+                bestSolutionOverall = findLargestValidSubset(bestSolutionOverall);
+                std::cout << "Found valid subset of size: " << bestSolutionOverall.size() << std::endl;
+            }
+        }
+    }
     return bestSolutionOverall;
 }
 
@@ -2557,43 +3108,92 @@ std::vector<int> TwoPhaseQuasiCliqueSolver::expandFromExistingSolution(
 
     return bestSolutionOverall;
 }
-void TwoPhaseQuasiCliqueSolver::verifyAndPrintSolution(const vector<int>& solution) {
+void TwoPhaseQuasiCliqueSolver::verifyAndPrintSolution(const std::vector<int>& solution) {
     int n = solution.size();
     int possibleEdges = (n * (n - 1)) / 2;
     int actualEdges = countEdges(solution);
     double density = (n > 1) ? static_cast<double>(actualEdges) / possibleEdges : 0;
     
-    cout << "\n=== Solution Summary ===" << endl;
-    cout << "Vertices: " << n << endl;
-    cout << "Edges: " << actualEdges << "/" << possibleEdges << endl;
-    cout << "Density: " << density << endl;
-    cout << "Minimum required edges for quasi-clique: " << (possibleEdges / 2) + 1 << endl;
+    std::cout << "\n=== Solution Summary ===" << std::endl;
+    std::cout << "Vertices: " << n << std::endl;
+    std::cout << "Edges: " << actualEdges << "/" << possibleEdges << std::endl;
+    std::cout << "Density: " << density << std::endl;
+    std::cout << "Minimum required edges for quasi-clique: " << (possibleEdges / 2) + 1 << std::endl;
     
+    bool isValidQuasiClique = (actualEdges > possibleEdges / 2);
     bool isConnectedSolution = isConnected(solution);
     
     if (n > 0) {
-        if (actualEdges > possibleEdges / 2) {
-            cout << "✓ Solution is a valid quasi-clique!" << endl;
+        if (isValidQuasiClique) {
+            std::cout << "✓ Solution is a valid quasi-clique!" << std::endl;
         } else {
-            cout << "✗ Solution is NOT a valid quasi-clique!" << endl;
+            std::cout << "✗ Solution is NOT a valid quasi-clique! (Missing " 
+                     << ((possibleEdges / 2) + 1) - actualEdges << " edges)" << std::endl;
         }
         
-        cout << "✓ Solution is " << (isConnectedSolution ? "connected" : "NOT connected") << endl;
+        std::cout << (isConnectedSolution ? "✓ Solution is connected" : "✗ Solution is NOT connected") << std::endl;
+        
+        // Provide more detailed diagnostics if invalid
+        if (!isValidQuasiClique || !isConnectedSolution) {
+            std::cout << "\n=== Detailed Diagnostics ===" << std::endl;
+            
+            if (!isValidQuasiClique) {
+                // Calculate and report lowest connected vertices
+                std::vector<std::pair<int, double>> vertexConnectivity;
+                for (int v : solution) {
+                    int connections = 0;
+                    for (int u : solution) {
+                        if (u != v && graph.hasEdge(u, v)) {
+                            connections++;
+                        }
+                    }
+                    double connectivity = (double)connections / (solution.size() - 1);
+                    vertexConnectivity.push_back({v, connectivity});
+                }
+                
+                // Sort by connectivity (lowest first)
+                std::sort(vertexConnectivity.begin(), vertexConnectivity.end(),
+                    [](const std::pair<int, double>& a, const std::pair<int, double>& b) {
+                        return a.second < b.second;
+                    });
+                
+                std::cout << "  5 least connected vertices:" << std::endl;
+                for (int i = 0; i < std::min(5, (int)vertexConnectivity.size()); i++) {
+                    std::cout << "    Vertex " << vertexConnectivity[i].first 
+                             << ": " << (vertexConnectivity[i].second * 100) << "% connected" << std::endl;
+                }
+            }
+            
+            if (!isConnectedSolution) {
+                // Report connected components
+                std::vector<std::vector<int>> components = findConnectedComponents(solution);
+                std::cout << "  Found " << components.size() << " disconnected components" << std::endl;
+                
+                // Sort by size (descending)
+                std::sort(components.begin(), components.end(), 
+                    [](const std::vector<int>& a, const std::vector<int>& b) {
+                        return a.size() > b.size();
+                    });
+                
+                for (size_t i = 0; i < std::min(size_t(3), components.size()); i++) {
+                    std::cout << "    Component " << (i+1) << ": " << components[i].size() << " vertices" << std::endl;
+                }
+            }
+        }
         
         if (n <= 100) {
-            cout << "\nVertices in solution: ";
+            std::cout << "\nVertices in solution: ";
             for (int v : solution) {
-                cout << v << " ";
+                std::cout << v << " ";
             }
-            cout << endl;
+            std::cout << std::endl;
         } else {
-            cout << "\nSolution has " << n << " vertices (too many to display)" << endl;
+            std::cout << "\nSolution has " << n << " vertices (too many to display)" << std::endl;
         }
     } else {
-        cout << "No solution found." << endl;
+        std::cout << "No solution found." << std::endl;
     }
 }
-
 bool TwoPhaseQuasiCliqueSolver::saveSolution(const vector<int>& solution, const string& filename) {
     try {
         ofstream solutionFile(filename);

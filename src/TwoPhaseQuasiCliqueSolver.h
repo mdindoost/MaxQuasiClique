@@ -164,6 +164,39 @@ private:
      * Get perturbed seeds from existing solutions
      */
     std::vector<int> getPerturbedSeeds(const std::vector<std::vector<int>>& solutions, int numSeeds);
+ /**
+     * Quick check if two solutions have enough overlap to consider merging
+     */
+    bool worthTryingMerge(const std::vector<int>& a, const std::vector<int>& b);
+    
+    /**
+     * Check if two solutions have significant overlap without calculating full Jaccard similarity
+     */
+    bool haveSignificantOverlap(const std::vector<int>& a, const std::vector<int>& b);
+    
+    /**
+     * Cluster solutions based on overlap before trying merges
+     */
+    void fastClusterAndMergeSolutions();
+    
+    /**
+     * Merge solutions within a single cluster
+     */
+    std::vector<int> mergeSolutionsInCluster(const std::vector<int>& clusterIndices);
+ /**
+     * Find connected components in a subgraph
+     */
+    std::vector<std::vector<int>> findConnectedComponents(const std::vector<int>& nodes);
+    
+    /**
+     * Repair a solution to make it a valid quasi-clique
+     */
+    std::vector<int> repairSolution(const std::vector<int>& solution);
+    
+    /**
+     * Find the largest valid subset of a solution
+     */
+    std::vector<int> findLargestValidSubset(const std::vector<int>& solution);
 
 public:
     /**
