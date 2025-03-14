@@ -70,7 +70,7 @@ TwoPhaseQuasiCliqueSolver::TwoPhaseQuasiCliqueSolver(const Graph& g)
              });
         
         // Only keep top candidates to reduce computation
-        const int MAX_CANDIDATES = 1000;
+        const int MAX_CANDIDATES = 2500;
         if (candidateNodes.size() > MAX_CANDIDATES) {
             candidateNodes.resize(MAX_CANDIDATES);
         }
@@ -95,10 +95,10 @@ TwoPhaseQuasiCliqueSolver::TwoPhaseQuasiCliqueSolver(const Graph& g)
                 int candidateConnections = countConnectionsToSolution(candidate, currentSolution);
                 
                 // Only consider candidates with good connectivity
-                if (candidateConnections < internalConnections[0].second) continue;
+                if (candidateConnections < internalConnections[0].second* 0.9) continue;
                 
-                // Try swapping with each low-connectivity node
-                for (size_t i = 0; i < std::min(size_t(10), internalConnections.size()); i++) {
+                // Try swapping with each low-connectivity node. changed from 10 to 25
+                for (size_t i = 0; i < std::min(size_t(25), internalConnections.size()); i++) {
                     int weakNode = internalConnections[i].first;
                     int weakNodeConnections = internalConnections[i].second;
                     
@@ -454,7 +454,7 @@ TwoPhaseQuasiCliqueSolver::TwoPhaseQuasiCliqueSolver(const Graph& g)
                 });
             
             // Keep top solutions from this round
-            const int TOP_SOLUTIONS_TO_KEEP = 20;
+            const int TOP_SOLUTIONS_TO_KEEP = 3;
             if (roundSolutions.size() > TOP_SOLUTIONS_TO_KEEP) {
                 roundSolutions.resize(TOP_SOLUTIONS_TO_KEEP);
             }
@@ -474,7 +474,7 @@ TwoPhaseQuasiCliqueSolver::TwoPhaseQuasiCliqueSolver(const Graph& g)
                     return a.size() > b.size();
                 });
             
-            const int MAX_PERSISTENT_SOLUTIONS = 50;
+            const int MAX_PERSISTENT_SOLUTIONS = 10;
             if (persistentSolutions.size() > MAX_PERSISTENT_SOLUTIONS) {
                 persistentSolutions.resize(MAX_PERSISTENT_SOLUTIONS);
             }
@@ -3174,7 +3174,7 @@ std::vector<int> TwoPhaseQuasiCliqueSolver::findLargeQuasiClique(int numSeeds, i
     
     // Step 3: Perform multi-round exploration with improved methods
     std::cout << "Step 3: Starting multi-round exploration..." << std::endl;
-    const int NUM_ROUNDS = 3;  // Number of exploration rounds
+    const int NUM_ROUNDS = 1;  // Number of exploration rounds
     multiRoundExploration(numSeeds, NUM_ROUNDS, numThreads);
     
     if (terminationRequested) {

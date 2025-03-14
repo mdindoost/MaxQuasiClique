@@ -1,52 +1,68 @@
-def common_nodes(file1, file2):
-    """
-    Reads two files of node IDs (one per line) and prints how many are in common.
-    Also prints the list of common nodes.
-    """
+import networkx as nx
 
-    # QUESTION to clarify:
-    # 1) Are these node IDs strings or integers?
-    #    - If integers, we might want to convert them: int(line.strip()).
-    #    - Otherwise, we keep them as strings.
-    # 
-    # 2) Should we ignore duplicates within the same file?
-    #    - By using sets, duplicates in the same file are automatically ignored.
-    #
-    # 3) Do we need to handle empty lines or other formatting quirks?
+def read_graph(edges_file):
+    """
+    Reads an edge list from a text file.
+    Lines starting with '#' are ignored.
+    Each valid line should have two numbers separated by whitespace.
+    """
+    G = nx.Graph()
+    with open(edges_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('#') or not line:
+                continue
+            parts = line.split()
+            if len(parts) != 2:
+                continue
+            u, v = parts
+            G.add_edge(int(u), int(v))
+    return G
 
-    # For now, let's assume they are integers and ignore duplicates.
-    with open(file1, 'r') as f1:
-        nodes1 = set()
-        for line in f1:
+def read_nodes(nodes_file):
+    """
+    Reads node IDs from a file, one per line.
+    """
+    nodes = set()
+    with open(nodes_file, 'r') as f:
+        for line in f:
             line = line.strip()
             if line:
-                # If node IDs are integers:
-                node_id = int(line)
-                nodes1.add(node_id)
+                nodes.add(int(line))
+    return nodes
 
-    with open(file2, 'r') as f2:
-        nodes2 = set()
-        for line in f2:
-            line = line.strip()
-            if line:
-                # If node IDs are integers:
-                node_id = int(line)
-                nodes2.add(node_id)
+def main():
+    # File paths
+    graph_file = "/home/mohammad/MaxQuasiClique/data/flywire_edges_converted.txt"
+    solution_file1 = "solution_50_175_3.txt"  # Solution A
+    solution_file2 = "solution_50_175_1.txt"  # Solution B
 
-    # Compute the intersection
-    common = nodes1.intersection(nodes2)
-    print(f"Number of nodes in common: {len(common)}")
+    # Load full graph and solution node sets
+    G = read_graph(graph_file)
+    sol1 = read_nodes(solution_file1)
+    sol2 = read_nodes(solution_file2)
 
-    # Print them if you want to see the actual overlap
-    if common:
-        print("Common node IDs:")
-        for node in sorted(common):
-            print(node)
+    # Compute differences:
+    diff1 = sol1 - sol2  # Nodes in solution1 (A) but not in solution2 (B)
+    diff2 = sol2 - sol1  # Nodes in solution2 (B) but not in solution1 (A)
 
-# Example usage:
+    print("Nodes in solA but not in solB:")
+    for node in sorted(diff1):
+        full_degree = G.degree(node)
+        # Degree in its subgraph: count neighbors that are in solution1 (A)
+        subgraph_degree = sum(1 for neighbor in G.neighbors(node) if neighbor in sol1)
+        # Edges connecting to solution2 (B)
+        edges_to_sol2 = sum(1 for neighbor in G.neighbors(node) if neighbor in sol2)
+        print(f"  Node {node}: degree(g) {full_degree}, degree(subg) {subgraph_degree}, edges to solB: {edges_to_sol2}")
+
+    print("\nNodes in solB but not in solA:")
+    for node in sorted(diff2):
+        full_degree = G.degree(node)
+        # Degree in its subgraph: count neighbors that are in solution2 (B)
+        subgraph_degree = sum(1 for neighbor in G.neighbors(node) if neighbor in sol2)
+        # Edges connecting to solution1 (A)
+        edges_to_sol1 = sum(1 for neighbor in G.neighbors(node) if neighbor in sol1)
+        print(f"  Node {node}: degree in graph {full_degree}, degree in its subgraph {subgraph_degree}, edges to solution_50_175_1.txt: {edges_to_sol1}")
+
 if __name__ == "__main__":
-    # Update with the actual paths of your two files:
-    file_a = "/home/mohammad/MaxQuasiClique/results/three175.csv"
-    file_b = "solution_50_175.txt"
-
-    common_nodes(file_a, file_b)
+    main()
