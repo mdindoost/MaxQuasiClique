@@ -183,22 +183,44 @@ private:
      * Merge solutions within a single cluster
      */
     std::vector<int> mergeSolutionsInCluster(const std::vector<int>& clusterIndices);
- /**
+    /**
      * Find connected components in a subgraph
      */
     std::vector<std::vector<int>> findConnectedComponents(const std::vector<int>& nodes);
     
-    /**
-     * Repair a solution to make it a valid quasi-clique
-     */
-    std::vector<int> repairSolution(const std::vector<int>& solution);
+
     
     /**
      * Find the largest valid subset of a solution
      */
     std::vector<int> findLargestValidSubset(const std::vector<int>& solution);
 
+        /**
+     * Optimize a solution by swapping nodes based on degree and connectivity
+     */
+    std::vector<int> optimizeByNodeSwapping(const std::vector<int>& solution, int maxIterations = 100);
+ /**
+     * Flag to control whether node swapping optimization is used
+     */
+    bool useNodeSwapping = true;
+
+
+    
+
+    /**
+     * Repair a solution to make it a valid quasi-clique
+     */
+    std::vector<int> repairSolution(const std::vector<int>& solution);
+    
+
 public:
+/**
+     * Enable or disable node swapping optimization
+     */
+    void setUseNodeSwapping(bool value) {
+        useNodeSwapping = value;
+    }
+
     /**
      * Set the threshold for community merging
      */

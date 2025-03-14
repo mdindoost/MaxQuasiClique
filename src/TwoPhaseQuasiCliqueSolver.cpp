@@ -10,8 +10,211 @@
 using namespace std;
 
 TwoPhaseQuasiCliqueSolver::TwoPhaseQuasiCliqueSolver(const Graph& g) 
-    : graph(g), totalSeeds(0), communityDetector(g) {}
+    : graph(g), totalSeeds(0), communityDetector(g), useNodeSwapping(true) {}
 
+    std::vector<int> TwoPhaseQuasiCliqueSolver::optimizeByNodeSwapping(const std::vector<int>& solution, int maxIterations) {
+        if (solution.empty()) return solution;
+        
+        std::cout << "Optimizing solution of size " << solution.size() << " using node swapping..." << std::endl;
+        
+        std::vector<int> bestSolution = solution;
+        std::unordered_set<int> solutionSet(solution.begin(), solution.end());
+        
+        // Find minimum and maximum degree within the solution
+        int minDegree = std::numeric_limits<int>::max();
+        int maxDegree = 0;
+        
+        for (int node : solution) {
+            int degree = graph.getDegree(node);
+            minDegree = std::min(minDegree, degree);
+            maxDegree = std::max(maxDegree, degree);
+        }
+        
+        std::cout << "  Degree range in solution: " << minDegree << " to " << maxDegree << std::endl;
+        
+        // Calculate internal connections for each node in the solution
+        std::vector<std::pair<int, int>> internalConnections;
+        for (int node : solution) {
+            int connections = countConnectionsToSolution(node, solution) - 1; // -1 to exclude self-connection count
+            internalConnections.push_back({node, connections});
+        }
+        
+        // Sort by internal connections (ascending)
+        std::sort(internalConnections.begin(), internalConnections.end(),
+             [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+                 return a.second < b.second;
+             });
+        
+        std::cout << "  Lowest internal connections: " << internalConnections[0].second 
+                  << ", highest: " << internalConnections.back().second << std::endl;
+        
+        // Get all nodes in the graph with degree in the specified range
+        std::vector<int> allNodes = graph.getVertices();
+        std::vector<int> candidateNodes;
+        
+        for (int node : allNodes) {
+            if (solutionSet.count(node) == 0) { // Node not in solution
+                int degree = graph.getDegree(node);
+                if (degree >= minDegree && degree <= maxDegree) {
+                    candidateNodes.push_back(node);
+                }
+            }
+        }
+        
+        std::cout << "  Found " << candidateNodes.size() << " candidate nodes with degree in range" << std::endl;
+        
+        // Sort candidates by their connections to the solution (descending)
+        std::sort(candidateNodes.begin(), candidateNodes.end(),
+             [this, &solution](int a, int b) {
+                 return countConnectionsToSolution(a, solution) > countConnectionsToSolution(b, solution);
+             });
+        
+        // Only keep top candidates to reduce computation
+        const int MAX_CANDIDATES = 1000;
+        if (candidateNodes.size() > MAX_CANDIDATES) {
+            candidateNodes.resize(MAX_CANDIDATES);
+        }
+        
+        // Try swapping nodes
+        int iterations = 0;
+        int improvements = 0;
+        
+        while (iterations < maxIterations && !terminationRequested) {
+            bool improved = false;
+            iterations++;
+            
+            // Take a copy of the current solution to work with
+            std::vector<int> currentSolution = bestSolution;
+            std::unordered_set<int> currentSet(currentSolution.begin(), currentSolution.end());
+            
+            // Try swapping each candidate with nodes that have fewer internal connections
+            for (int candidate : candidateNodes) {
+                if (currentSet.count(candidate) > 0) continue; // Skip if already in solution
+                
+                int candidateConnections = countConnectionsToSolution(candidate, currentSolution);
+                
+                // Only consider candidates with good connectivity
+                if (candidateConnections < internalConnections[0].second) continue;
+                
+                // Try swapping with each low-connectivity node
+                for (size_t i = 0; i < std::min(size_t(10), internalConnections.size()); i++) {
+                    int weakNode = internalConnections[i].first;
+                    int weakNodeConnections = internalConnections[i].second;
+                    
+                    // Only swap if candidate has more connections
+                    if (candidateConnections <= weakNodeConnections) continue;
+                    
+                    // Create a test solution with the swap
+                    std::vector<int> testSolution;
+                    for (int node : currentSolution) {
+                        if (node != weakNode) {
+                            testSolution.push_back(node);
+                        }
+                    }
+                    testSolution.push_back(candidate);
+                    
+                    // Check if valid quasi-clique
+                    if (isQuasiClique(testSolution) && isConnected(testSolution)) {
+                        // Accept the swap
+                        currentSolution = testSolution;
+                        currentSet.erase(weakNode);
+                        currentSet.insert(candidate);
+                        
+                        // Update internal connections for the modified solution
+                        internalConnections.clear();
+                        for (int node : currentSolution) {
+                            int connections = countConnectionsToSolution(node, currentSolution) - 1;
+                            internalConnections.push_back({node, connections});
+                        }
+                        
+                        // Sort by internal connections (ascending)
+                        std::sort(internalConnections.begin(), internalConnections.end(),
+                             [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+                                 return a.second < b.second;
+                             });
+                        
+                        improved = true;
+                        improvements++;
+                        
+                        std::cout << "  Iteration " << iterations << ": Swapped node " << weakNode 
+                                 << " (connections: " << weakNodeConnections << ") with node " << candidate
+                                 << " (connections: " << candidateConnections << ")" << std::endl;
+                        
+                        break; // Move to next candidate
+                    }
+                }
+                
+                if (improved) break; // Try next iteration with the improved solution
+            }
+            
+            // If we improved, update best solution
+            if (improved) {
+                bestSolution = currentSolution;
+                
+                // Try to check if we can add more nodes without removing any
+                std::vector<int> expandedSolution = improvedExpansionMethod(bestSolution);
+                if (expandedSolution.size() > bestSolution.size()) {
+                    bestSolution = expandedSolution;
+                    
+                    // Update internal connections for the expanded solution
+                    internalConnections.clear();
+                    for (int node : bestSolution) {
+                        int connections = countConnectionsToSolution(node, bestSolution) - 1;
+                        internalConnections.push_back({node, connections});
+                    }
+                    
+                    // Sort by internal connections (ascending)
+                    std::sort(internalConnections.begin(), internalConnections.end(),
+                         [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+                             return a.second < b.second;
+                         });
+                    
+                    std::cout << "  Expanded solution to size " << bestSolution.size() << std::endl;
+                }
+                
+                // Update candidate nodes list based on the new solution
+                solutionSet.clear();
+                solutionSet.insert(bestSolution.begin(), bestSolution.end());
+                
+                // Re-filter candidates
+                candidateNodes.clear();
+                for (int node : allNodes) {
+                    if (solutionSet.count(node) == 0) { // Node not in solution
+                        int degree = graph.getDegree(node);
+                        if (degree >= minDegree && degree <= maxDegree) {
+                            candidateNodes.push_back(node);
+                        }
+                    }
+                }
+                
+                // Sort candidates by their connections to the solution (descending)
+                std::sort(candidateNodes.begin(), candidateNodes.end(),
+                     [this, &bestSolution](int a, int b) {
+                         return countConnectionsToSolution(a, bestSolution) > 
+                                countConnectionsToSolution(b, bestSolution);
+                     });
+                
+                // Only keep top candidates
+                if (candidateNodes.size() > MAX_CANDIDATES) {
+                    candidateNodes.resize(MAX_CANDIDATES);
+                }
+            } else {
+                // No improvement in this iteration
+                std::cout << "  Iteration " << iterations << ": No improvement found" << std::endl;
+                
+                // If we've had some improvements, try a few more iterations before giving up
+                if (improvements > 0 && iterations >= 10) {
+                    break;
+                }
+            }
+        }
+        
+        std::cout << "Node swapping optimization completed after " << iterations << " iterations" << std::endl;
+        std::cout << "Made " << improvements << " successful swaps" << std::endl;
+        std::cout << "Final solution size: " << bestSolution.size() << std::endl;
+        
+        return bestSolution;
+    }
     std::vector<int> TwoPhaseQuasiCliqueSolver::getBoundaryVerticesToExplore(
         const std::vector<std::vector<int>>& solutions, int maxSeeds) {
         
@@ -479,7 +682,8 @@ TwoPhaseQuasiCliqueSolver::TwoPhaseQuasiCliqueSolver(const Graph& g)
         std::vector<int> solution = initialSolution;
         
         // Maximum number of attempts without improvement before giving up
-        const int MAX_STAGNANT_ITERATIONS = 20;
+        //const int MAX_STAGNANT_ITERATIONS = 20;
+        const int MAX_STAGNANT_ITERATIONS = 10;
         int stagnantIterations = 0;
         int totalIterations = 0;
         
@@ -2046,7 +2250,6 @@ void TwoPhaseQuasiCliqueSolver::fastClusterAndMergeSolutions() {
         candidateSolutions.resize(MAX_CANDIDATES);
     }
 }
-
 void TwoPhaseQuasiCliqueSolver::phase2_refineSolutions() {
     std::cout << "Phase 2: Refining and merging solutions (fast version)..." << std::endl;
     
@@ -2162,6 +2365,116 @@ void TwoPhaseQuasiCliqueSolver::phase2_refineSolutions() {
             [](const std::vector<int>& a, const std::vector<int>& b) { 
                 return a.size() > b.size(); 
             });
+    }
+    
+    // Apply node swapping optimization to best solutions - with useNodeSwapping flag check
+    if (useNodeSwapping && !candidateSolutions.empty() && !terminationRequested) {
+        std::cout << "Applying node swapping optimization to best candidate solution..." << std::endl;
+        
+        // Copy the best solution to work with
+        std::vector<int> bestCandidate = candidateSolutions[0];
+        std::vector<int> optimizedSolution = optimizeByNodeSwapping(bestCandidate);
+        
+        if (optimizedSolution.size() > bestCandidate.size()) {
+            std::cout << "  Node swapping improved solution from " << bestCandidate.size() 
+                     << " to " << optimizedSolution.size() << " vertices" << std::endl;
+            
+            // Replace the best solution
+            candidateSolutions[0] = optimizedSolution;
+            
+            // Update best solution if needed
+            if (optimizedSolution.size() > bestSolutionOverall.size()) {
+                bestSolutionOverall = optimizedSolution;
+                
+                // Save best solution
+                std::ofstream solutionFile("solution_in_progress.txt");
+                for (int v : bestSolutionOverall) {
+                    solutionFile << v << std::endl;
+                }
+                solutionFile.close();
+                
+                std::cout << "New best solution found: " << bestSolutionOverall.size() << " vertices" << std::endl;
+            }
+            
+            // Also try applying node swapping to second and third best solutions if they're large enough
+            if (candidateSolutions.size() > 1 && !terminationRequested) {
+                for (int i = 1; i < std::min(3, (int)candidateSolutions.size()); i++) {
+                    if (candidateSolutions[i].size() >= bestCandidate.size() * 0.9) { // Only try if reasonably large
+                        std::cout << "  Applying node swapping to solution #" << (i+1) << " of size " 
+                                 << candidateSolutions[i].size() << std::endl;
+                        
+                        std::vector<int> optimized = optimizeByNodeSwapping(candidateSolutions[i]);
+                        
+                        if (optimized.size() > candidateSolutions[i].size()) {
+                            std::cout << "  Improved from " << candidateSolutions[i].size() 
+                                     << " to " << optimized.size() << " vertices" << std::endl;
+                            candidateSolutions[i] = optimized;
+                            
+                            // Update best solution if needed
+                            if (optimized.size() > bestSolutionOverall.size()) {
+                                bestSolutionOverall = optimized;
+                                
+                                // Save progress
+                                std::ofstream solutionFile("solution_in_progress.txt");
+                                for (int v : bestSolutionOverall) {
+                                    solutionFile << v << std::endl;
+                                }
+                                solutionFile.close();
+                                
+                                std::cout << "New best solution found: " << bestSolutionOverall.size() << " vertices" << std::endl;
+                            }
+                        }
+                    }
+                    
+                    if (terminationRequested) break;
+                }
+            }
+        } else {
+            std::cout << "  Node swapping did not improve the best candidate solution" << std::endl;
+        }
+        
+        // If the best solution is still the same size after trying node swapping on individual solutions,
+        // try a more aggressive approach: merge the top solutions and then apply node swapping
+        if (!terminationRequested && bestSolutionOverall.size() == bestCandidate.size() && candidateSolutions.size() > 1) {
+            std::cout << "Trying aggressive merge and swap approach..." << std::endl;
+            
+            // Take union of top 2-3 solutions
+            std::unordered_set<int> unionSet(bestSolutionOverall.begin(), bestSolutionOverall.end());
+            
+            // Add nodes from second and third best solutions
+            for (int i = 1; i < std::min(3, (int)candidateSolutions.size()); i++) {
+                for (int node : candidateSolutions[i]) {
+                    unionSet.insert(node);
+                }
+            }
+            
+            std::vector<int> unionSolution(unionSet.begin(), unionSet.end());
+            
+            // If the union is much larger, try to extract a good quasi-clique from it
+            if (unionSolution.size() > bestSolutionOverall.size() * 1.2) {
+                std::cout << "  Created union of " << unionSolution.size() << " nodes from top solutions" << std::endl;
+                
+                // First try to repair it
+                std::vector<int> repairedUnion = repairSolution(unionSolution);
+                
+                // Then try node swapping
+                if (repairedUnion.size() > bestSolutionOverall.size()) {
+                    std::vector<int> optimizedUnion = optimizeByNodeSwapping(repairedUnion);
+                    
+                    if (optimizedUnion.size() > bestSolutionOverall.size()) {
+                        std::cout << "  Aggressive approach found solution of size " << optimizedUnion.size() << std::endl;
+                        bestSolutionOverall = optimizedUnion;
+                        
+                        // Save progress
+                        std::ofstream solutionFile("solution_in_progress.txt");
+                        for (int v : bestSolutionOverall) {
+                            solutionFile << v << std::endl;
+                        }
+                        solutionFile.close();
+                    }
+                }
+            }
+        }
     }
     
     std::cout << "Phase 2 complete. Best solution size: " << bestSolutionOverall.size() << std::endl;
@@ -2370,7 +2683,6 @@ std::vector<int> TwoPhaseQuasiCliqueSolver::findLargestValidSubset(const std::ve
     std::cout << "Found valid subset of size " << subset.size() << std::endl;
     return subset;
 }
-
 // void TwoPhaseQuasiCliqueSolver::phase2_refineSolutions() {
 //     cout << "Phase 2: Refining and merging solutions (enhanced version)..." << endl;
     
@@ -2830,6 +3142,7 @@ return std::vector<int>();
     
 //     return bestSolutionOverall;
 // }
+
 std::vector<int> TwoPhaseQuasiCliqueSolver::findLargeQuasiClique(int numSeeds, int numThreads) {
     // Determine number of threads to use
     if (numThreads <= 0) {
@@ -2883,6 +3196,7 @@ std::vector<int> TwoPhaseQuasiCliqueSolver::findLargeQuasiClique(int numSeeds, i
     if (terminationRequested) {
         std::cout << "Termination requested during final refinement. Returning best solution found so far." << std::endl;
     }
+    
     // Final validation
     if (!bestSolutionOverall.empty()) {
         // Check if our best solution is valid
@@ -2906,9 +3220,30 @@ std::vector<int> TwoPhaseQuasiCliqueSolver::findLargeQuasiClique(int numSeeds, i
             }
         }
     }
+    
+    // Final node swapping - with useNodeSwapping flag check
+    if (useNodeSwapping && !bestSolutionOverall.empty() && bestSolutionOverall.size() >= 50) {
+        std::cout << "Applying node swapping optimization to best solution..." << std::endl;
+        std::vector<int> optimizedSolution = optimizeByNodeSwapping(bestSolutionOverall);
+        
+        if (optimizedSolution.size() > bestSolutionOverall.size()) {
+            std::cout << "Node swapping improved solution from " << bestSolutionOverall.size() 
+                     << " to " << optimizedSolution.size() << " vertices" << std::endl;
+            bestSolutionOverall = optimizedSolution;
+            
+            // Save the improved solution
+            std::ofstream solutionFile("solution_in_progress.txt");
+            for (int v : bestSolutionOverall) {
+                solutionFile << v << std::endl;
+            }
+            solutionFile.close();
+        } else {
+            std::cout << "Node swapping did not improve solution" << std::endl;
+        }
+    }
+    
     return bestSolutionOverall;
 }
-
 // Update the expandFromExistingSolution method to use improved expansion
 std::vector<int> TwoPhaseQuasiCliqueSolver::expandFromExistingSolution(
                                 const std::vector<int>& initialSolution, int numSeeds, int numThreads) {

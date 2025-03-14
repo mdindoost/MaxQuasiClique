@@ -126,6 +126,14 @@ while [[ $# -gt 0 ]]; do
         shift
         shift
         ;;
+        --node-swapping)
+        NODE_SWAPPING="true"
+        shift
+        ;;
+        --no-node-swapping)
+        NODE_SWAPPING="false"
+        shift
+        ;;
     *)
         print_error "Unknown option: $1"
         echo "Usage: $0 [--input INPUT_FILE] [--seeds NUM_SEEDS] [--threads NUM_THREADS] [--initial-solution FILE] [--connectivity-threshold VALUE]"
@@ -223,13 +231,22 @@ echo
 print_section "RUNNING MODULAR TWO-PHASE ALGORITHM"
 print_progress "This may take a while depending on the size of the graph..."
 print_progress "You can safely press Ctrl+C to stop - the best solution found so far will be saved"
+
+# Build command with node swapping flag
+NODE_SWAPPING_FLAG=""
+if [ "$NODE_SWAPPING" = "false" ]; then
+    NODE_SWAPPING_FLAG="--no-node-swapping"
+else
+    NODE_SWAPPING_FLAG="--node-swapping"
+fi
+
 if [ -n "$INITIAL_SOLUTION" ]; then
-    print_command "./build/two_phase_solver \"$CONVERTED_EDGE_FILE\" $NUM_SEEDS $NUM_THREADS \"$INITIAL_SOLUTION\""
-    ./build/two_phase_solver "$CONVERTED_EDGE_FILE" $NUM_SEEDS $NUM_THREADS "$INITIAL_SOLUTION" &
+    print_command "./build/two_phase_solver \"$CONVERTED_EDGE_FILE\" $NUM_SEEDS $NUM_THREADS \"$INITIAL_SOLUTION\" $NODE_SWAPPING_FLAG"
+    ./build/two_phase_solver "$CONVERTED_EDGE_FILE" $NUM_SEEDS $NUM_THREADS "$INITIAL_SOLUTION" $NODE_SWAPPING_FLAG &
     PID=$!
 else
-    print_command "./build/two_phase_solver \"$CONVERTED_EDGE_FILE\" $NUM_SEEDS $NUM_THREADS"
-    ./build/two_phase_solver "$CONVERTED_EDGE_FILE" $NUM_SEEDS $NUM_THREADS &
+    print_command "./build/two_phase_solver \"$CONVERTED_EDGE_FILE\" $NUM_SEEDS $NUM_THREADS $NODE_SWAPPING_FLAG"
+    ./build/two_phase_solver "$CONVERTED_EDGE_FILE" $NUM_SEEDS $NUM_THREADS $NODE_SWAPPING_FLAG &
     PID=$!
 fi
 
