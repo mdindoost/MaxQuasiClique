@@ -78,6 +78,7 @@ TwoPhaseQuasiCliqueSolver::TwoPhaseQuasiCliqueSolver(const Graph& g)
         // Try swapping nodes
         int iterations = 0;
         int improvements = 0;
+        bool madeAnySwaps = false;
         
         while (iterations < maxIterations && !terminationRequested) {
             bool improved = false;
@@ -135,6 +136,7 @@ TwoPhaseQuasiCliqueSolver::TwoPhaseQuasiCliqueSolver(const Graph& g)
                         
                         improved = true;
                         improvements++;
+                        madeAnySwaps = true;
                         
                         std::cout << "  Iteration " << iterations << ": Swapped node " << weakNode 
                                  << " (connections: " << weakNodeConnections << ") with node " << candidate
@@ -150,27 +152,6 @@ TwoPhaseQuasiCliqueSolver::TwoPhaseQuasiCliqueSolver(const Graph& g)
             // If we improved, update best solution
             if (improved) {
                 bestSolution = currentSolution;
-                
-                // Try to check if we can add more nodes without removing any
-                std::vector<int> expandedSolution = improvedExpansionMethod(bestSolution);
-                if (expandedSolution.size() > bestSolution.size()) {
-                    bestSolution = expandedSolution;
-                    
-                    // Update internal connections for the expanded solution
-                    internalConnections.clear();
-                    for (int node : bestSolution) {
-                        int connections = countConnectionsToSolution(node, bestSolution) - 1;
-                        internalConnections.push_back({node, connections});
-                    }
-                    
-                    // Sort by internal connections (ascending)
-                    std::sort(internalConnections.begin(), internalConnections.end(),
-                         [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
-                             return a.second < b.second;
-                         });
-                    
-                    std::cout << "  Expanded solution to size " << bestSolution.size() << std::endl;
-                }
                 
                 // Update candidate nodes list based on the new solution
                 solutionSet.clear();
@@ -206,6 +187,20 @@ TwoPhaseQuasiCliqueSolver::TwoPhaseQuasiCliqueSolver(const Graph& g)
                 if (improvements > 0 && iterations >= 10) {
                     break;
                 }
+            }
+        }
+        
+        // After completing all swaps, try expansion if we made any improvements
+        if (madeAnySwaps) {
+            std::cout << "  All swaps completed. Now attempting expansion..." << std::endl;
+            std::vector<int> expandedSolution = improvedExpansionMethod(bestSolution);
+            
+            if (expandedSolution.size() > bestSolution.size()) {
+                std::cout << "  Expanded solution from " << bestSolution.size() 
+                         << " to " << expandedSolution.size() << " vertices" << std::endl;
+                bestSolution = expandedSolution;
+            } else {
+                std::cout << "  Expansion didn't further improve the solution" << std::endl;
             }
         }
         

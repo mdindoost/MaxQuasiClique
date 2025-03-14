@@ -198,7 +198,8 @@ private:
         /**
      * Optimize a solution by swapping nodes based on degree and connectivity
      */
-    std::vector<int> optimizeByNodeSwapping(const std::vector<int>& solution, int maxIterations = 100);
+    // std::vector<int> optimizeByNodeSwapping(const std::vector<int>& solution, int maxIterations = 100);
+    std::vector<int> optimizeByNodeSwapping(const std::vector<int>& solution, int maxIterations = 20);
  /**
      * Flag to control whether node swapping optimization is used
      */

@@ -14,6 +14,7 @@ INPUT_FILE="data/edges.csv"
 OUTPUT_DIR="results"
 NUM_SEEDS=5000  # Increase default seeds for better exploration?!
 INITIAL_SOLUTION=""
+NODE_SWAPPING="true" 
 
 # Auto-detect number of threads (use 75% of available cores to avoid overloading the system)
 AVAILABLE_THREADS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
