@@ -3,6 +3,8 @@
 #include <iostream>
 #include <chrono>
 #include <csignal>
+#include <string>
+#include <cstdlib>  // For getenv
 
 // Global termination flag
 volatile sig_atomic_t terminationRequested = 0;
@@ -15,7 +17,7 @@ void signalHandler(int signal) {
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <graph_file> [num_seeds] [num_threads] [initial_solution_file] [connectivity_threshold]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <graph_file> [num_seeds] [num_threads] [initial_solution_file]" << std::endl;
         return 1;
     }
     
@@ -23,7 +25,13 @@ int main(int argc, char* argv[]) {
     int numSeeds = (argc > 2) ? std::stoi(argv[2]) : 20;
     int numThreads = (argc > 3) ? std::stoi(argv[3]) : 0; // 0 means use all available
     std::string initialSolutionFile = (argc > 4) ? argv[4] : "";
-    double connectivityThreshold = (argc > 5) ? std::stod(argv[5]) : 0.1; // Default threshold for community merging
+    double connectivityThreshold = 0.1; // Default threshold for community merging
+    
+    // Check for environment variable to enable core-based approach
+    bool useCoreBasedApproach = false;
+    if (getenv("USE_CORE_BASED") != nullptr) {
+        useCoreBasedApproach = true;
+    }
     
     // Register signal handlers
     signal(SIGINT, signalHandler);  // Ctrl+C
@@ -34,6 +42,9 @@ int main(int argc, char* argv[]) {
     std::cout << "  Hardware concurrency: " << std::thread::hardware_concurrency() << " threads" << std::endl;
     std::cout << "  Using " << numThreads << " threads" << std::endl;
     std::cout << "  Community connectivity threshold: " << connectivityThreshold << std::endl;
+    if (useCoreBasedApproach) {
+        std::cout << "  Using core-based expansion approach" << std::endl;
+    }
     
     // Load graph
     Graph graph;
@@ -56,9 +67,14 @@ int main(int argc, char* argv[]) {
     // Measure execution time
     auto startTime = std::chrono::high_resolution_clock::now();
     
-    // Check if we have an initial solution
+    // Find large quasi-clique using the selected approach
     std::vector<int> solution;
-    if (!initialSolutionFile.empty()) {
+    
+    if (useCoreBasedApproach) {
+        // Use the core-based approach
+        solution = solver.findFromCoreNodes(numThreads);
+    } else if (!initialSolutionFile.empty()) {
+        // Check if we have an initial solution
         std::vector<int> initialSolution = solver.loadSolutionFromFile(initialSolutionFile);
         if (!initialSolution.empty()) {
             std::cout << "Starting from initial solution with " << initialSolution.size() << " nodes" << std::endl;

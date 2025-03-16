@@ -1,0 +1,345 @@
+[0;34m====================================================[0m
+[0;34m        CoreBased MaxQuasiClique on FlyWire       [0m
+[0;34m====================================================[0m
+
+[0;32m[PROGRESS][0m Configuration:
+- Input file: data/flywire_edges_converted.txt
+- Number of seeds: 5000
+- Detected CPU cores: 8
+- Using threads: 6
+- Using core-based approach with analysis results
+
+
+[0;34m=== CHECKING INPUT FILE ===[0m
+[0;32m[PROGRESS][0m Input file exists: data/flywire_edges_converted.txt
+[0;32m[PROGRESS][0m File size: 28M
+First few lines of the input file:
+# Converted from data/flywire_edges.txt - Large IDs mapped to sequential integers
+0 1
+2 3
+4 5
+6 7
+
+
+[0;34m=== CHECKING ANALYSIS RESULTS ===[0m
+[0;32m[PROGRESS][0m Found core nodes file with 0 nodes
+[0;32m[PROGRESS][0m Found node frequency file
+
+[0;34m=== BUILDING EXECUTABLE ===[0m
+[0;34m[EXECUTING][0m make clean && make
+rm -rf build
+g++ -std=c++17 -Wall -Wextra -O3 -pthread -c src/main.cpp -o build/main.o
+g++ -std=c++17 -Wall -Wextra -O3 -pthread -c src/Graph.cpp -o build/Graph.o
+g++ -std=c++17 -Wall -Wextra -O3 -pthread -c src/ThreadPool.cpp -o build/ThreadPool.o
+g++ -std=c++17 -Wall -Wextra -O3 -pthread -c src/CommunityDetector.cpp -o build/CommunityDetector.o
+g++ -std=c++17 -Wall -Wextra -O3 -pthread -c src/TwoPhaseQuasiCliqueSolver.cpp -o build/TwoPhaseQuasiCliqueSolver.o
+g++ -std=c++17 -Wall -Wextra -O3 -pthread build/main.o build/Graph.o build/ThreadPool.o build/CommunityDetector.o build/TwoPhaseQuasiCliqueSolver.o -o build/two_phase_solver
+[0;32m[PROGRESS][0m Successfully built two_phase_solver
+
+
+[0;34m=== RUNNING ALGORITHM ===[0m
+[0;32m[PROGRESS][0m This may take a while depending on the size of the graph...
+[0;32m[PROGRESS][0m You can safely press Ctrl+C to stop - the best solution found so far will be saved
+[0;34m[EXECUTING][0m ./build/two_phase_solver "data/flywire_edges_converted.txt" 5000 6
+System information:
+Starting algorithm at Sun 16 Mar 2025 05:07:42 PM EDT
+  Hardware concurrency: 8 threads
+  Using 6 threads
+  Community connectivity threshold: 0.1
+  Using core-based expansion approach
+Scanning for vertices...
+Using contiguous vertex IDs...
+Loading edges...
+  Processed 1000000 lines, 999998 edges added (1000000 lines/sec)
+  Processed 2000000 lines, 1999998 edges added (2000000 lines/sec)
+Loaded graph with 134181 vertices and 2511789 edges.
+Graph loaded in 2.251 seconds
+Starting expansion from core nodes...
+Loaded 1 core nodes
+Core nodes form a invalid quasi-clique
+Finding largest valid subset of core nodes...
+Found valid subset with 1 nodes
+Found 174 high-frequency nodes not in core
+Found 168 boundary vertices
+Current diameter: 0
+Testing high-frequency nodes for compatibility...
+Added high-frequency node 6542, new size: 2
+Added high-frequency node 2074, new size: 3
+Added high-frequency node 4565, new size: 4
+Added high-frequency node 30663, new size: 5
+Added high-frequency node 10831, new size: 6
+Added high-frequency node 28699, new size: 7
+Added high-frequency node 11, new size: 8
+Added high-frequency node 15440, new size: 9
+Added high-frequency node 15816, new size: 10
+Added high-frequency node 13811, new size: 11
+Added high-frequency node 4706, new size: 12
+Added high-frequency node 6783, new size: 13
+Added high-frequency node 7235, new size: 14
+Added high-frequency node 1365, new size: 15
+Added high-frequency node 17078, new size: 16
+Added high-frequency node 3354, new size: 17
+Added high-frequency node 27366, new size: 18
+Added high-frequency node 31022, new size: 19
+Added high-frequency node 37141, new size: 20
+Added high-frequency node 4160, new size: 21
+Added high-frequency node 147, new size: 22
+Added high-frequency node 487, new size: 23
+Added high-frequency node 15460, new size: 24
+Added high-frequency node 11158, new size: 25
+Added high-frequency node 433, new size: 26
+Added high-frequency node 2340, new size: 27
+Added high-frequency node 53301, new size: 28
+Added high-frequency node 15178, new size: 29
+Added high-frequency node 15501, new size: 30
+Added high-frequency node 31578, new size: 31
+Added high-frequency node 19471, new size: 32
+Added high-frequency node 44916, new size: 33
+Added high-frequency node 4026, new size: 34
+Added high-frequency node 7450, new size: 35
+Added high-frequency node 48903, new size: 36
+Added high-frequency node 11449, new size: 37
+Added high-frequency node 5566, new size: 38
+Added high-frequency node 36645, new size: 39
+Added high-frequency node 19933, new size: 40
+Added high-frequency node 4068, new size: 41
+Added high-frequency node 477, new size: 42
+Added high-frequency node 40978, new size: 43
+Added high-frequency node 2904, new size: 44
+Added high-frequency node 8748, new size: 45
+Added high-frequency node 30726, new size: 46
+Added high-frequency node 13633, new size: 47
+Added high-frequency node 18473, new size: 48
+Added high-frequency node 20312, new size: 49
+Added high-frequency node 36775, new size: 50
+Added high-frequency node 299, new size: 51
+Added high-frequency node 11424, new size: 52
+Added high-frequency node 16338, new size: 53
+Added high-frequency node 8962, new size: 54
+Added high-frequency node 18876, new size: 55
+Added high-frequency node 16143, new size: 56
+Added high-frequency node 32015, new size: 57
+Added high-frequency node 9005, new size: 58
+Added high-frequency node 15819, new size: 59
+Added high-frequency node 9229, new size: 60
+Added high-frequency node 1934, new size: 61
+Added high-frequency node 33697, new size: 62
+Added high-frequency node 37758, new size: 63
+Added high-frequency node 19620, new size: 64
+Added high-frequency node 1289, new size: 65
+Added high-frequency node 3605, new size: 66
+Added high-frequency node 247, new size: 67
+Added high-frequency node 8451, new size: 68
+Added high-frequency node 18537, new size: 69
+Added high-frequency node 9811, new size: 70
+Added high-frequency node 1184, new size: 71
+Added high-frequency node 8788, new size: 72
+Added high-frequency node 23963, new size: 73
+Added high-frequency node 2950, new size: 74
+Added high-frequency node 10488, new size: 75
+Added high-frequency node 10, new size: 76
+Added high-frequency node 17541, new size: 77
+Added high-frequency node 7395, new size: 78
+Added high-frequency node 16297, new size: 79
+Added high-frequency node 12857, new size: 80
+Added high-frequency node 2140, new size: 81
+Added high-frequency node 7052, new size: 82
+Added high-frequency node 36082, new size: 83
+Added high-frequency node 12858, new size: 84
+Added high-frequency node 4796, new size: 85
+Added high-frequency node 18472, new size: 86
+Added high-frequency node 32155, new size: 87
+Added high-frequency node 14975, new size: 88
+Added high-frequency node 41893, new size: 89
+Added high-frequency node 6249, new size: 90
+Added high-frequency node 4242, new size: 91
+Added high-frequency node 2446, new size: 92
+Added high-frequency node 10375, new size: 93
+Added high-frequency node 19873, new size: 94
+Added high-frequency node 19115, new size: 95
+Added high-frequency node 2926, new size: 96
+Added high-frequency node 43566, new size: 97
+Added high-frequency node 11450, new size: 98
+Added high-frequency node 41351, new size: 99
+Added high-frequency node 11819, new size: 100
+Added high-frequency node 4398, new size: 101
+Added high-frequency node 20838, new size: 102
+Added high-frequency node 13990, new size: 103
+Added high-frequency node 4399, new size: 104
+Added high-frequency node 25619, new size: 105
+Added high-frequency node 22883, new size: 106
+Added high-frequency node 1700, new size: 107
+Added high-frequency node 1300, new size: 108
+Added high-frequency node 3662, new size: 109
+Added high-frequency node 4396, new size: 110
+Added high-frequency node 19750, new size: 111
+Added high-frequency node 7925, new size: 112
+Added high-frequency node 16076, new size: 113
+Added high-frequency node 531, new size: 114
+Added high-frequency node 9112, new size: 115
+Added high-frequency node 37496, new size: 116
+Added high-frequency node 2405, new size: 117
+Added high-frequency node 17862, new size: 118
+Added high-frequency node 3353, new size: 119
+Added high-frequency node 2913, new size: 120
+Added high-frequency node 26059, new size: 121
+Added high-frequency node 10418, new size: 122
+Added high-frequency node 889, new size: 123
+Added high-frequency node 8368, new size: 124
+Added high-frequency node 8367, new size: 125
+Added high-frequency node 7051, new size: 126
+Added high-frequency node 2925, new size: 127
+Added high-frequency node 10832, new size: 128
+Added high-frequency node 1185, new size: 129
+Added high-frequency node 14259, new size: 130
+Added high-frequency node 10417, new size: 131
+Added high-frequency node 7128, new size: 132
+Added high-frequency node 37140, new size: 133
+Added high-frequency node 23274, new size: 134
+Added high-frequency node 1290, new size: 135
+Added high-frequency node 1254, new size: 136
+Added high-frequency node 3405, new size: 137
+Added high-frequency node 7396, new size: 138
+Added high-frequency node 36303, new size: 139
+Added high-frequency node 21814, new size: 140
+Added high-frequency node 146, new size: 141
+Added high-frequency node 2561, new size: 142
+Added high-frequency node 4938, new size: 143
+Added high-frequency node 10886, new size: 144
+Added high-frequency node 8284, new size: 145
+Added high-frequency node 6248, new size: 146
+Added high-frequency node 39035, new size: 147
+Added high-frequency node 25829, new size: 148
+Added high-frequency node 10325, new size: 149
+Added high-frequency node 3725, new size: 150
+Added high-frequency node 1562, new size: 151
+Added high-frequency node 4314, new size: 152
+Added high-frequency node 8573, new size: 153
+Added high-frequency node 17317, new size: 154
+Added high-frequency node 13812, new size: 155
+Added high-frequency node 16881, new size: 156
+Added high-frequency node 14306, new size: 157
+Added high-frequency node 7840, new size: 158
+Added high-frequency node 1935, new size: 159
+Added high-frequency node 1134, new size: 160
+Added high-frequency node 16273, new size: 161
+Added high-frequency node 7857, new size: 162
+Added high-frequency node 1299, new size: 163
+Added high-frequency node 1355, new size: 164
+Added high-frequency node 46500, new size: 165
+Added high-frequency node 2481, new size: 166
+Added high-frequency node 3810, new size: 167
+Added high-frequency node 4313, new size: 168
+Added high-frequency node 17216, new size: 169
+Added high-frequency node 26634, new size: 170
+Added high-frequency node 6245, new size: 171
+Added high-frequency node 9090, new size: 172
+Added high-frequency node 10887, new size: 173
+Added high-frequency node 22393, new size: 174
+Testing boundary vertices for compatibility...
+Applying node swapping optimization...
+Optimizing solution of size 174 using node swapping...
+  Degree range in solution: 68 to 2860
+  Lowest internal connections: 38, highest: 158
+  Found 16551 candidate nodes with degree in range
+  Iteration 1: Swapped node 42501 (connections: 38) with node 15492 (connections: 101)
+  Iteration 2: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 3: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 4: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 5: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 6: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 7: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 8: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 9: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 10: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 11: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 12: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 13: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 14: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 15: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 16: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 17: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 18: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 19: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 20: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 21: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 22: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 23: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 24: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 25: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 26: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 27: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 28: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 29: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 30: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 31: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 32: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 33: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 34: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 35: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 36: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 37: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 38: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 39: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 40: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 41: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 42: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 43: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 44: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 45: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 46: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 47: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 48: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  Iteration 49: Swapped node 235 (connections: 43) with node 22393 (connections: 44)
+  Iteration 50: Swapped node 22393 (connections: 43) with node 235 (connections: 44)
+  All swaps completed. Now attempting expansion...
+  Starting improved expansion from solution of size 174
+  New best solution found: 175 vertices (saved to solution_in_progress.txt)
+    Iteration 10: solution size = 175, stagnant iterations = 9
+    Iteration 11: solution size = 175, stagnant iterations = 10
+  Improved expansion completed after 11 iterations, final size: 175
+  Expanded solution from 174 to 175 vertices
+Node swapping optimization completed after 50 iterations
+Made 50 successful swaps
+Final solution size: 175
+Node swapping improved solution from 174 to 175 vertices
+
+=== Solution Summary ===
+Vertices: 175
+Edges: 7647/15225
+Density: 0.502266
+Minimum required edges for quasi-clique: 7613
+✓ Solution is a valid quasi-clique!
+✓ Solution is connected
+
+Solution has 175 vertices (too many to display)
+
+Algorithm execution time: 291.587 seconds
+Total time (including loading): 293.838 seconds
+Solution saved to solution.txt
+Algorithm finished at Sun 16 Mar 2025 05:12:36 PM EDT with status 0
+[0;32m[PROGRESS][0m Algorithm completed successfully.
+[0;32m[PROGRESS][0m Solution file created with 175 vertices.
+
+
+[0;34m=== MAPPING SOLUTION TO ORIGINAL IDs ===[0m
+[0;34m[EXECUTING][0m python3 scripts/map_results_to_original_ids.py --solution "solution.txt" --mapping "data/id_mapping.csv" --output "results/flywire_solution_original_ids.txt" --summary "results/flywire_solution_summary.json"
+Loaded mapping with 134181 IDs
+Loaded solution with 175 vertices
+Mapped 175 vertices to original IDs
+Wrote mapped solution to results/flywire_solution_original_ids.txt
+Loaded mapping with 134181 IDs
+Wrote summary to results/flywire_solution_summary.json
+[0;32m[PROGRESS][0m Successfully mapped solution to original IDs.
+[0;32m[PROGRESS][0m Original IDs file: results/flywire_solution_original_ids.txt
+[0;32m[PROGRESS][0m Summary file: results/flywire_solution_summary.json
+
+[0;34m=== SUMMARY ===[0m
+[0;32mFound a quasi-clique with 175 neurons[0m
+
+Results have been saved to:
+- Solution: solution.txt
+- Original neuron IDs: results/flywire_solution_original_ids.txt
+- Analysis: results/flywire_solution_summary.json
+[0;34m====================================================[0m
+Process completed at Sun 16 Mar 2025 05:12:36 PM EDT

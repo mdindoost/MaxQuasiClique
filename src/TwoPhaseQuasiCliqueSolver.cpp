@@ -6,11 +6,231 @@
 #include <chrono>
 #include <queue>
 #include <csignal>
+#include <unordered_set>
 
 using namespace std;
 
 TwoPhaseQuasiCliqueSolver::TwoPhaseQuasiCliqueSolver(const Graph& g) 
     : graph(g), totalSeeds(0), communityDetector(g), useNodeSwapping(true) {}
+/**
+ * Find large quasi-clique by expanding from core nodes
+ */
+std::vector<int> TwoPhaseQuasiCliqueSolver::findFromCoreNodes(int numThreads) {
+    cout << "Starting expansion from core nodes..." << endl;
+    
+    // Load core nodes (nodes that appear in most subgraphs)
+    std::vector<int> coreNodes;
+    if (!loadCoreNodes("analysis_results/core_nodes.txt", coreNodes)) {
+        cout << "Failed to load core nodes. Reverting to standard algorithm." << endl;
+        return findLargeQuasiClique(40, numThreads);
+    }
+    
+    cout << "Loaded " << coreNodes.size() << " core nodes" << endl;
+    
+    // Verify that these core nodes form a valid quasi-clique
+    bool isValid = isQuasiClique(coreNodes) && isConnected(coreNodes);
+    cout << "Core nodes form a " << (isValid ? "valid" : "invalid") << " quasi-clique" << endl;
+    
+    // If not valid, find the largest valid subset
+    if (!isValid) {
+        cout << "Finding largest valid subset of core nodes..." << endl;
+        coreNodes = findLargestValidSubset(coreNodes);
+        cout << "Found valid subset with " << coreNodes.size() << " nodes" << endl;
+    }
+    
+    // Set as initial best solution
+    if (!coreNodes.empty() && isQuasiClique(coreNodes) && isConnected(coreNodes)) {
+        bestSolutionOverall = coreNodes;
+    }
+    
+    // Load all high-frequency nodes (nodes that appear in >50% but not 100% of subgraphs)
+    std::vector<int> highFreqNodes;
+    loadHighFrequencyNodes("analysis_results/node_frequency.csv", highFreqNodes, coreNodes);
+    cout << "Found " << highFreqNodes.size() << " high-frequency nodes not in core" << endl;
+    
+    // Find boundary vertices of the core solution
+    std::unordered_set<int> boundary = findBoundaryVertices(coreNodes);
+    cout << "Found " << boundary.size() << " boundary vertices" << endl;
+    
+    // Track diameter to ensure we maintain the constraint
+    int currentDiameter = calculateDiameter(coreNodes);
+    cout << "Current diameter: " << currentDiameter << endl;
+    
+    // First, try adding high-frequency nodes
+    cout << "Testing high-frequency nodes for compatibility..." << endl;
+    std::vector<int> expandedSolution = coreNodes;
+    
+    for (int v : highFreqNodes) {
+        std::vector<int> testSolution = expandedSolution;
+        testSolution.push_back(v);
+        
+        if (isQuasiClique(testSolution) && isConnected(testSolution)) {
+            int newDiameter = calculateDiameter(testSolution);
+            if (newDiameter <= 3) { // Maintain diameter constraint
+                expandedSolution = testSolution;
+                cout << "Added high-frequency node " << v << ", new size: " << expandedSolution.size() << endl;
+            }
+        }
+    }
+    
+    // Now, try boundary vertices
+    cout << "Testing boundary vertices for compatibility..." << endl;
+    
+    // Convert boundary to vector and sort by connectivity to expandedSolution
+    std::vector<std::pair<int, int>> sortedBoundary;
+    for (int v : boundary) {
+        // Skip nodes we've already added
+        if (std::find(expandedSolution.begin(), expandedSolution.end(), v) != expandedSolution.end()) {
+            continue;
+        }
+        
+        int connections = countConnectionsToSolution(v, expandedSolution);
+        sortedBoundary.push_back({v, connections});
+    }
+    
+    // Sort by number of connections (descending)
+    std::sort(sortedBoundary.begin(), sortedBoundary.end(),
+        [](const auto& a, const auto& b) { return a.second > b.second; });
+    
+    // Try adding boundary vertices with most connections
+    for (const auto& [v, connections] : sortedBoundary) {
+        std::vector<int> testSolution = expandedSolution;
+        testSolution.push_back(v);
+        
+        if (isQuasiClique(testSolution) && isConnected(testSolution)) {
+            int newDiameter = calculateDiameter(testSolution);
+            if (newDiameter <= 3) { // Maintain diameter constraint
+                expandedSolution = testSolution;
+                cout << "Added boundary vertex " << v << " with " << connections 
+                     << " connections, new size: " << expandedSolution.size() << endl;
+            }
+        }
+    }
+    
+    // Apply node swapping optimization if enabled
+    if (useNodeSwapping && expandedSolution.size() > coreNodes.size()) {
+        cout << "Applying node swapping optimization..." << endl;
+        std::vector<int> optimizedSolution = optimizeByNodeSwapping(expandedSolution);
+        
+        if (optimizedSolution.size() > expandedSolution.size()) {
+            cout << "Node swapping improved solution from " << expandedSolution.size() 
+                 << " to " << optimizedSolution.size() << " vertices" << endl;
+            expandedSolution = optimizedSolution;
+        } else {
+            cout << "Node swapping did not improve the solution" << endl;
+        }
+    }
+    
+    // Update best solution if better
+    if (expandedSolution.size() > bestSolutionOverall.size()) {
+        bestSolutionOverall = expandedSolution;
+        
+        // Save progress
+        std::ofstream solutionFile("solution_in_progress.txt");
+        for (int v : bestSolutionOverall) {
+            solutionFile << v << std::endl;
+        }
+        solutionFile.close();
+        
+        cout << "New best solution: " << bestSolutionOverall.size() << " vertices" << endl;
+    }
+    
+    return bestSolutionOverall;
+}
+
+/**
+ * Load core nodes from file
+ */
+bool TwoPhaseQuasiCliqueSolver::loadCoreNodes(const std::string& filename, std::vector<int>& coreNodes) {
+    coreNodes.clear();
+    
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return false;
+    }
+    
+    int nodeId;
+    while (file >> nodeId) {
+        coreNodes.push_back(nodeId);
+    }
+    
+    return !coreNodes.empty();
+}
+
+/**
+ * Load high-frequency nodes from analysis file
+ */
+void TwoPhaseQuasiCliqueSolver::loadHighFrequencyNodes(
+    const std::string& filename, std::vector<int>& highFreqNodes, const std::vector<int>& coreNodes) {
+    
+    highFreqNodes.clear();
+    std::unordered_set<int> coreSet(coreNodes.begin(), coreNodes.end());
+    
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return;
+    }
+    
+    // Skip header
+    std::string header;
+    std::getline(file, header);
+    
+    std::string line;
+    while (std::getline(file, line)) {
+        std::istringstream iss(line);
+        std::string nodeStr, freqStr, percentStr;
+        
+        if (std::getline(iss, nodeStr, ',') && 
+            std::getline(iss, freqStr, ',') && 
+            std::getline(iss, percentStr, ',')) {
+            
+            int nodeId = std::stoi(nodeStr);
+            double percentage = std::stod(percentStr);
+            
+            // Include nodes that appear in >50% of subgraphs but not in core
+            if (percentage > 50.0 && coreSet.find(nodeId) == coreSet.end()) {
+                highFreqNodes.push_back(nodeId);
+            }
+        }
+    }
+}
+
+/**
+ * Calculate diameter of a subgraph
+ */
+int TwoPhaseQuasiCliqueSolver::calculateDiameter(const std::vector<int>& nodes) const {
+    if (nodes.size() <= 1) return 0;
+    
+    int maxDist = 0;
+    std::unordered_set<int> nodeSet(nodes.begin(), nodes.end());
+    
+    // For each node, find the maximum distance to any other node
+    for (int source : nodes) {
+        std::unordered_map<int, int> distances;
+        std::queue<int> q;
+        
+        q.push(source);
+        distances[source] = 0;
+        
+        while (!q.empty()) {
+            int current = q.front();
+            q.pop();
+            
+            for (int neighbor : graph.getNeighbors(current)) {
+                if (nodeSet.count(neighbor) > 0 && distances.count(neighbor) == 0) {
+                    distances[neighbor] = distances[current] + 1;
+                    maxDist = std::max(maxDist, distances[neighbor]);
+                    q.push(neighbor);
+                }
+            }
+        }
+    }
+    
+    return maxDist;
+}
+
 
     std::vector<int> TwoPhaseQuasiCliqueSolver::optimizeByNodeSwapping(const std::vector<int>& solution, int maxIterations) {
         if (solution.empty()) return solution;
@@ -2614,69 +2834,25 @@ std::vector<int> TwoPhaseQuasiCliqueSolver::repairSolution(const std::vector<int
     return result;
 }
 
+/**
+ * Find largest valid subset of a solution
+ */
 std::vector<int> TwoPhaseQuasiCliqueSolver::findLargestValidSubset(const std::vector<int>& solution) {
-    std::cout << "Finding largest valid subset of solution with " << solution.size() << " vertices..." << std::endl;
+    // Start with empty solution
+    std::vector<int> result;
     
-    if (solution.empty()) return {};
-    
-    // Start with high degree nodes in the solution
-    std::vector<std::pair<int, int>> verticesWithDegree;
+    // Add vertices one by one, maintaining quasi-clique property
     for (int v : solution) {
-        // Count connections within the solution
-        int connections = 0;
-        for (int u : solution) {
-            if (v != u && graph.hasEdge(v, u)) {
-                connections++;
-            }
-        }
-        verticesWithDegree.push_back({v, connections});
-    }
-    
-    // Sort by degree in solution (descending)
-    std::sort(verticesWithDegree.begin(), verticesWithDegree.end(),
-         [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
-             return a.second > b.second;
-         });
-    
-    // Start with top 20% highest degree vertices
-    int startSize = std::max(5, (int)(solution.size() * 0.2));
-    std::vector<int> subset;
-    for (int i = 0; i < std::min(startSize, (int)verticesWithDegree.size()); i++) {
-        subset.push_back(verticesWithDegree[i].first);
-    }
-    
-    // Check if our initial subset is valid
-    if (!isQuasiClique(subset) || !isConnected(subset)) {
-        std::cout << "  Initial subset is not valid, starting with smaller core" << std::endl;
+        std::vector<int> testSolution = result;
+        testSolution.push_back(v);
         
-        // Start with just the top 5 vertices
-        subset.clear();
-        for (int i = 0; i < std::min(5, (int)verticesWithDegree.size()); i++) {
-            subset.push_back(verticesWithDegree[i].first);
-        }
-        
-        // If still invalid, try with just the highest degree vertex
-        if (!isQuasiClique(subset) || !isConnected(subset)) {
-            std::cout << "  Smaller core still invalid, starting with single vertex" << std::endl;
-            subset = {verticesWithDegree[0].first};
+        if (testSolution.size() <= 1 || 
+            (isQuasiClique(testSolution) && isConnected(testSolution))) {
+            result = testSolution;
         }
     }
     
-    // Try to add remaining vertices in order of degree
-    std::cout << "  Growing from core of " << subset.size() << " vertices" << std::endl;
-    
-    for (size_t i = subset.size(); i < verticesWithDegree.size(); i++) {
-        int candidate = verticesWithDegree[i].first;
-        std::vector<int> testSubset = subset;
-        testSubset.push_back(candidate);
-        
-        if (isQuasiClique(testSubset) && isConnected(testSubset)) {
-            subset = testSubset;
-        }
-    }
-    
-    std::cout << "Found valid subset of size " << subset.size() << std::endl;
-    return subset;
+    return result;
 }
 // void TwoPhaseQuasiCliqueSolver::phase2_refineSolutions() {
 //     cout << "Phase 2: Refining and merging solutions (enhanced version)..." << endl;

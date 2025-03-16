@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 # Default parameters
 INPUT_FILE="data/edges.csv"
 OUTPUT_DIR="results"
-NUM_SEEDS=5000  # Increase default seeds for better exploration?!
+NUM_SEEDS=50  # Increase default seeds for better exploration?!
 INITIAL_SOLUTION=""
 NODE_SWAPPING="true" 
 

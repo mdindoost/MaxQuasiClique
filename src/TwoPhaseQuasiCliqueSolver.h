@@ -188,7 +188,6 @@ private:
      */
     std::vector<std::vector<int>> findConnectedComponents(const std::vector<int>& nodes);
     
-
     
     /**
      * Find the largest valid subset of a solution
@@ -215,6 +214,27 @@ private:
     
 
 public:
+/**
+ * Find large quasi-clique by expanding from core nodes
+ */
+std::vector<int> findFromCoreNodes(int numThreads = 1);
+
+/**
+ * Load core nodes from file
+ */
+bool loadCoreNodes(const std::string& filename, std::vector<int>& coreNodes);
+
+/**
+ * Load high-frequency nodes from analysis file
+ */
+void loadHighFrequencyNodes(const std::string& filename, std::vector<int>& highFreqNodes, const std::vector<int>& coreNodes);
+
+/**
+ * Calculate diameter of a subgraph
+ */
+int calculateDiameter(const std::vector<int>& nodes) const;
+
+
 /**
      * Enable or disable node swapping optimization
      */
